@@ -1,0 +1,30 @@
+# Dependencies - installed by deploy/install.sh or windows-run.ps1, not tracked
+frontend/node_modules/
+backend/.venv/
+
+# Build artifacts - rebuilt on every deploy/update, not tracked
+frontend/dist/
+backend/app/static/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets / local config - never commit these
+backend/.env
+.env
+*.env.local
+
+# Runtime data - AGENT_HUB_DATA_DIR defaults to ~/.agent-hub, outside this
+# repo, but ignore these patterns here too as a safety net
+*.db
+*.sqlite
+*.sqlite3
+vault.key
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/

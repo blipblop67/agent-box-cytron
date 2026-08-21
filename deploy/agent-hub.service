@@ -1,0 +1,20 @@
+[Unit]
+Description=Agent Hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__BACKEND_DIR__
+Environment=AGENT_HUB_DATA_DIR=__HOME__/.agent-hub
+EnvironmentFile=-__BACKEND_DIR__/.env
+ExecStart=__BACKEND_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8811
+Restart=always
+RestartSec=5
+# Modest safety net - keeps a runaway process from taking down the whole Pi;
+# raise this if you're running bigger local embedding models.
+MemoryMax=3G
+
+[Install]
+WantedBy=multi-user.target

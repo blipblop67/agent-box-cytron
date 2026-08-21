@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  /* Base surfaces - a dim, warm-green-black, like a PCB under low light */
+  --color-bg: #0e110c;
+  --color-surface: #171b13;
+  --color-surface-raised: #1f2418;
+  --color-surface-hover: #232914;
+
+  /* Lines */
+  --color-line: #2a3121;
+  --color-line-strong: #3a4230;
+
+  /* Text */
+  --color-ink: #edf0e6;
+  --color-ink-muted: #9ba491;
+  --color-ink-faint: #616a58;
+
+  /* Copper - the primary signal accent, like solder and traces */
+  --color-copper: #d0873c;
+  --color-copper-bright: #eba25a;
+  --color-copper-dim: #4a3520;
+
+  /* Signal green - success / connected / active-run states, a lit PCB trace */
+  --color-signal: #7fd99a;
+  --color-signal-dim: #253a2c;
+
+  /* Danger */
+  --color-danger: #e0685a;
+  --color-danger-dim: #3d2420;
+
+  --animate-trace: trace 1.1s linear infinite;
+
+  @keyframes trace {
+    to {
+      stroke-dashoffset: -16;
+    }
+  }
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-copper-dim);
+  color: var(--color-ink);
+}
+
+* {
+  scrollbar-color: var(--color-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-copper);
+  outline-offset: 2px;
+}
