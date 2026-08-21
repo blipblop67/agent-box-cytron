@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS flows (
     owner_id TEXT NOT NULL,
     visibility TEXT NOT NULL DEFAULT 'shared',
     graph_json TEXT NOT NULL DEFAULT '{"nodes": [], "edges": []}',
+    api_key_hash TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id)
@@ -181,6 +182,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
     if "password_hash" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+    flow_columns = {row["name"] for row in conn.execute("PRAGMA table_info(flows)")}
+    if "api_key_hash" not in flow_columns:
+        conn.execute("ALTER TABLE flows ADD COLUMN api_key_hash TEXT")
 
     # Telegram used to be one bot connection per user (in oauth_credentials,
     # like Gmail/Drive). It's now a named, ownable resource (like a
@@ -479,6 +484,16 @@ def delete_flow(flow_id: str) -> None:
 
 def user_can_access_flow(flow: sqlite3.Row, user_id: str, is_admin: bool = False) -> bool:
     return is_admin or flow["visibility"] == "shared" or flow["owner_id"] == user_id
+
+
+def set_flow_api_key_hash(flow_id: str, api_key_hash: str | None) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE flows SET api_key_hash = ? WHERE id = ?", (api_key_hash, flow_id))
+
+
+def get_flow_by_api_key_hash(api_key_hash: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM flows WHERE api_key_hash = ?", (api_key_hash,)).fetchone()
 
 
 # ---- hub-wide settings (LLM provider config, etc.) ------------------------------

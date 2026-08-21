@@ -10,6 +10,7 @@ export const useFlowEditorStore = create((set, get) => ({
   flowName: '',
   flowDescription: '',
   flowVisibility: 'shared',
+  published: false,
   ownerId: null,
   nodes: [],
   edges: [],
@@ -25,6 +26,7 @@ export const useFlowEditorStore = create((set, get) => ({
       flowName: flow.name,
       flowDescription: flow.description,
       flowVisibility: flow.visibility,
+      published: flow.published,
       ownerId: flow.owner_id,
       nodes: flow.graph.nodes.map((n) => ({ ...n })),
       edges: flow.graph.edges.map((e) => ({ ...e, type: 'trace' })),
@@ -111,7 +113,7 @@ export const useFlowEditorStore = create((set, get) => ({
 
   reset() {
     set({
-      flowId: null, flowName: '', flowDescription: '', flowVisibility: 'shared', ownerId: null,
+      flowId: null, flowName: '', flowDescription: '', flowVisibility: 'shared', published: false, ownerId: null,
       nodes: [], edges: [], selectedNodeId: null, dirty: false, running: false, runResult: null, runError: null,
     })
   },

@@ -2,12 +2,13 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from . import db, flow_engine
+from . import db, flow_engine, security
 from .auth import get_current_user
 from .models import (
     FlowCreate,
     FlowGraph,
     FlowOut,
+    FlowPublishResponse,
     FlowRunRequest,
     FlowRunResponse,
     FlowSummaryOut,
@@ -19,7 +20,9 @@ router = APIRouter(prefix="/flows", tags=["flows"])
 
 def _flow_out(flow) -> FlowOut:
     graph = json.loads(flow["graph_json"])
-    return FlowOut(**{**dict(flow), "graph": graph})
+    data = dict(flow)
+    published = bool(data.pop("api_key_hash", None))  # never pass the hash into the response model
+    return FlowOut(**data, graph=graph, published=published)
 
 
 def _flow_summary(flow) -> FlowSummaryOut:
@@ -34,6 +37,13 @@ def _require_flow_access(flow_id: str, user: dict):
     is_admin = user["role"] == "admin"
     if not db.user_can_access_flow(flow, user["id"], is_admin=is_admin):
         raise HTTPException(403, "This flow is private to another team member")
+    return flow
+
+
+def _require_flow_owner(flow_id: str, user: dict):
+    flow = _require_flow_access(flow_id, user)
+    if flow["owner_id"] != user["id"] and user["role"] != "admin":
+        raise HTTPException(403, "Only the owner or a hub admin can do this")
     return flow
 
 
@@ -84,3 +94,21 @@ def run_flow(flow_id: str, body: FlowRunRequest, user: dict = Depends(get_curren
     except flow_engine.FlowError as exc:
         raise HTTPException(400, {"node_id": exc.node_id, "message": str(exc)})
     return FlowRunResponse(**result)
+
+
+@router.post("/{flow_id}/publish", response_model=FlowPublishResponse)
+def publish_flow(flow_id: str, user: dict = Depends(get_current_user)):
+    """Generates a new API key for this flow (replacing any existing one -
+    only one live key per flow, so publishing again is how you rotate it).
+    The raw key is only ever shown here, once - only its hash is stored."""
+    _require_flow_owner(flow_id, user)
+    api_key = security.new_api_key()
+    db.set_flow_api_key_hash(flow_id, security.hash_api_key(api_key))
+    return FlowPublishResponse(api_key=api_key, run_url=f"/api/public/flows/{flow_id}/run")
+
+
+@router.delete("/{flow_id}/publish")
+def unpublish_flow(flow_id: str, user: dict = Depends(get_current_user)):
+    _require_flow_owner(flow_id, user)
+    db.set_flow_api_key_hash(flow_id, None)
+    return {"published": False}

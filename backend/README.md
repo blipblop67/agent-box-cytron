@@ -60,6 +60,11 @@ Drive tool integrations. Pairs with the React frontend in
   "Update now" downloads, rebuilds, and restarts - all from the browser, no
   SSH needed. User data lives entirely outside the code directory this
   touches, so it's untouched by design, not by care (`app/updater.py`)
+- **Publish a flow as an API** — the "Publish" button in the flow editor
+  generates an API key; anything outside the hub (a website, a script,
+  another app) can then call that one flow with `X-API-Key`, no login, no
+  session (`app/public_routes.py`). Runs as the flow's owner, since there's
+  no logged-in person to act as for an external caller
 - **Calculator** — evaluates a math expression safely (no `eval()`)
 - Knowledge bases, flows, and Gmail/Drive connections are all **per-person**,
   with shared-vs-private visibility and admin oversight, for a small team
@@ -99,6 +104,7 @@ python3 tests/test_conversations.py   # Proves conversation memory by inspecting
 python3 tests/test_web_search_and_documents.py   # Web search node + one-off document text extraction
 python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean messages, not raw httpx text
 python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
+python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
 python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
 python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
 ```
@@ -339,6 +345,17 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **API keys are hashed with SHA-256, not bcrypt.** Passwords need a slow,
+  salted hash because people choose low-entropy secrets an attacker can
+  guess offline; a generated `ahub_...` key is 256 bits of randomness with
+  nothing to guess, and a published flow needs a fast, indexable lookup on
+  every public call, which is exactly what bcrypt is designed to prevent.
+  Same reasoning session tokens already used (`app/security.py`), now
+  reused for the same category of secret.
+- **A published flow runs as its owner**, not "whoever's logged in" -
+  there isn't anyone logged in for an external caller. This is the same
+  rule scheduled runs already followed (`app/scheduler.py`), just extended
+  to a second no-session context rather than invented fresh for this.
 - **Telegram bots are a resource, not a connection.** Gmail/Drive are
   personal - a tool node acts as whoever runs the flow, since a Gmail node
   sending "from you" only makes sense if it's *your* Gmail. A bot doesn't
@@ -485,8 +502,8 @@ node, not just a final answer.
   push mechanism from Gmail/Drive/Telegram (Telegram in particular could move
   to a webhook instead of the `getUpdates` polling `telegram_client.py` uses
   now, once the hub has a stable public URL)
-- Branching/conditional logic in a flow, and a true "autonomous agent" node
-  (LLM decides which tools to call, vs. the deterministic wiring flows use today)
+- A true "autonomous agent" node - LLM decides which tools to call, vs. the
+  deterministic wiring flows use today
 - A GitHub token option for the updater (private repos, and GitHub's 60/hour
   unauthenticated rate limit)
 - Conversation history has no summarization/compaction - it's capped at the
@@ -497,3 +514,16 @@ node, not just a final answer.
   extracted text needs a correction, remove it from the message box and
   re-attach
 - An update history/changelog view beyond the single `app.bak` rollback slot
+- No rate limiting on the public flow API (`/api/public/flows/{id}/run`) -
+  a published flow can be called as fast as the caller wants; fine for the
+  "call this from my own script/website" use case it's built for, worth
+  revisiting before pointing anything untrusted at a published URL
+- No usage/call count shown for a published flow - it works, but there's no
+  "this key has been used N times, last seen at..." on the Publish modal yet
+- MCP export - turning a flow into a tool an MCP client (Claude Desktop,
+  Cursor) can call directly, the way the flow API above lets a website or
+  script call it. Same shape of feature, different protocol; a natural
+  next step once there's a concrete need for it
+- Branching/conditional logic in a flow (an If/Else or Router node) -
+  flows are still a strict DAG that runs every reachable node, no
+  LLM-driven "decide which path to take" yet

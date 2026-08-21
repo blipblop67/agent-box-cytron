@@ -5,6 +5,7 @@ and session tokens (cryptographically random, opaque, stored server-side).
 This is the one place that should ever touch a plaintext password or decide
 what makes a valid session.
 """
+import hashlib
 import secrets
 import time
 
@@ -30,6 +31,20 @@ def verify_password(password: str, password_hash: str | None) -> bool:
 
 def new_session_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def new_api_key() -> str:
+    # prefixed so a leaked key is immediately recognizable as an Agent Hub
+    # flow key in a log/commit scan, same idea as ghp_/sk_live_ prefixes
+    return f"ahub_{secrets.token_urlsafe(32)}"
+
+
+def hash_api_key(api_key: str) -> str:
+    # Deliberately NOT bcrypt: API keys are high-entropy random tokens, not
+    # user-chosen passwords, so there's no offline-guessing risk to slow
+    # down - and a published flow needs a fast, indexable lookup by hash on
+    # every public API call, which bcrypt is intentionally too slow for.
+    return hashlib.sha256(api_key.encode()).hexdigest()
 
 
 # ---- login throttling ------------------------------------------------------------

@@ -62,8 +62,22 @@ permanent knowledge base for it). Nine ready-to-use templates - customer
 support, product recommendations, meeting summaries, HR policy Q&A,
 research, technical support, tutoring, restaurant recommendations, and
 productivity coaching - put these together as concrete starting points.
-Known gaps are listed at the bottom of `backend/README.md` and
-`frontend/README.md` - mainly: no email-based "forgot password" flow (admin
-reset is the recovery path), no event-based/webhook trigger (only
-time-based schedules), conversation history is capped rather than
-summarized, and flows are DAGs without branching logic yet.
+Two more rounds landed since: LLM output renders as real markdown and math
+(bold, tables, code blocks, LaTeX formulas via KaTeX) everywhere it's shown,
+instead of showing literal `**`/`$...$` syntax; Telegram bots became a
+named, shared-or-private resource like a knowledge base rather than one
+connection per person, so different flows can message through entirely
+different bots regardless of who runs them; and any flow can be published
+with an API key for an external website/script to call with no login at
+all. That last one came out of a deliberate comparison against Langflow
+(the established open-source visual-flow competitor) - see
+`backend/README.md`'s design notes for what that comparison found worth
+adopting (a flow callable as an API), what's a bigger lift worth queuing
+(MCP export, branching), and what Langflow does that's deliberately absent
+here, including a real 2026 CVE in Langflow rooted in exactly the
+auth-optional-by-default and raw-code-execution patterns this project
+avoided from the start. Known gaps are listed at the bottom of
+`backend/README.md` and `frontend/README.md` - mainly: no email-based
+"forgot password" flow (admin reset is the recovery path), no event-based/
+webhook trigger (only time-based schedules), conversation history is capped
+rather than summarized, and flows are DAGs without branching logic yet.

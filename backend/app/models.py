@@ -114,6 +114,7 @@ class FlowOut(BaseModel):
     owner_id: str
     visibility: str
     graph: FlowGraph
+    published: bool
     created_at: float
     updated_at: float
 
@@ -144,6 +145,11 @@ class FlowRunTraceStep(BaseModel):
 class FlowRunResponse(BaseModel):
     output: str
     trace: list[FlowRunTraceStep]
+
+
+class FlowPublishResponse(BaseModel):
+    api_key: str
+    run_url: str
 
 
 class SettingsOut(BaseModel):
