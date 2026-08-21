@@ -24,6 +24,14 @@ Drive tool integrations. Pairs with the React frontend in
   API built for feeding LLMs), for anything that needs current information a
   static knowledge base can't provide - a Research Assistant, a restaurant
   recommendation agent (`app/web_search_client.py`)
+- **YouTube search** — a YouTube node backed by the YouTube Data API v3
+  (a plain API key, not a Google login - searching YouTube's public catalog
+  isn't "acting as" anyone). Returns titles, channels, descriptions, and
+  view counts, so an LLM node after it can reason about what's already
+  covered on a topic before proposing something new. The YouTube Video
+  Idea Generator template is built on exactly this: search a topic, then
+  get concrete new video ideas based on the gaps in what's already out
+  there (`app/youtube_client.py`)
 - **One-off document input** — `POST /api/extract-text` pulls the text out
   of an uploaded PDF/DOCX/CSV/TXT/MD without creating a permanent searchable
   Knowledge base entry, for something like "summarize this transcript" where
@@ -110,6 +118,7 @@ python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean mess
 python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
 python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
+python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
 python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
@@ -234,6 +243,25 @@ is generous for personal or small-team use. Hub-wide only, not a per-person
 setting like the LLM key - search results aren't billed per-account the same
 way LLM tokens are, so there's less reason for everyone to bring their own.
 
+### Setting up YouTube search
+
+Settings → YouTube search: paste in a YouTube API key - a plain API key,
+not an OAuth connection, since searching YouTube's public catalog isn't
+"acting as" anyone the way Gmail/Drive/Calendar are.
+
+1. In [Google Cloud Console](https://console.cloud.google.com), the same
+   project used for Gmail/Drive/Calendar works fine (or a fresh one, if
+   this is the only Google integration you want).
+2. APIs & Services → Library → enable **YouTube Data API v3**.
+3. APIs & Services → Credentials → Create Credentials → **API key** (not
+   OAuth client ID). Optionally restrict it to just the YouTube Data API
+   for a bit of defense in depth.
+4. Paste it into Settings → YouTube search and hit Save.
+
+Free tier is 10,000 quota units/day; a search costs 100 units, so roughly
+100 searches a day before you'd hit a limit - generous for personal or
+small-team use.
+
 ### Conversations (memory)
 
 Every flow can be used two ways: **Run**, in the flow editor, is always a
@@ -355,6 +383,14 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **YouTube search is modeled on Web search, not on Gmail/Drive/Calendar** -
+  a hub-wide API key (`app/youtube_client.py`, `hub_settings.py`), not a
+  per-person OAuth connection. The distinguishing question for any new
+  integration is "does this act as a specific person, or read something
+  public?" Gmail sending an email has to be *someone's* email; searching
+  YouTube's public catalog isn't attributable to anyone, so there's no
+  account to connect and no reason to make every team member set it up
+  individually - one key, admin-configured, same as Tavily.
 - **Calendar is a third sibling of Gmail/Drive, not a variant.** Adding a
   new Google product connection is almost entirely mechanical because the
   OAuth machinery was already generic: `calendar_oauth.py` /

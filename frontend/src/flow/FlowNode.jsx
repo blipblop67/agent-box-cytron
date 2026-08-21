@@ -17,6 +17,8 @@ function subtitleFor(type, data, knowledgeBases, telegramBots) {
     }
     case 'web_search':
       return data.query ? `Search "${data.query}"` : 'Searches using the previous output'
+    case 'youtube':
+      return data.query ? `Search "${data.query}"` : 'Searches using the previous output'
     case 'email':
       if (data.action === 'search') return data.query ? `Search "${data.query}"` : 'Search inbox'
       return data.to ? `Send to ${data.to}` : 'Send - no recipient yet'

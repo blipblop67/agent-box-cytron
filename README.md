@@ -76,8 +76,18 @@ adopting (a flow callable as an API), what's a bigger lift worth queuing
 (MCP export, branching), and what Langflow does that's deliberately absent
 here, including a real 2026 CVE in Langflow rooted in exactly the
 auth-optional-by-default and raw-code-execution patterns this project
-avoided from the start. Known gaps are listed at the bottom of
-`backend/README.md` and `frontend/README.md` - mainly: no email-based
-"forgot password" flow (admin reset is the recovery path), no event-based/
-webhook trigger (only time-based schedules), conversation history is capped
-rather than summarized, and flows are DAGs without branching logic yet.
+avoided from the start. Most recently: Google Calendar joined Gmail/Drive
+as a third independent connection (list or create events; the Personal
+Productivity Coach template pulls upcoming events as context for every
+check-in), and a YouTube search node (API-key-based, like web search, not
+an OAuth connection - searching isn't "acting as" anyone) powers a new
+YouTube Video Idea Generator template that searches a topic and proposes
+concrete new videos based on what's already covered. Building Calendar
+surfaced a real, pre-existing bug affecting every tool-then-LLM template:
+the LLM only ever saw a tool's raw output, silently losing whatever the
+person actually asked - fixed and regression-tested, see the design notes.
+Known gaps are listed at the bottom of `backend/README.md` and
+`frontend/README.md` - mainly: no email-based "forgot password" flow
+(admin reset is the recovery path), no event-based/webhook trigger (only
+time-based schedules), conversation history is capped rather than
+summarized, and flows are DAGs without branching logic yet.

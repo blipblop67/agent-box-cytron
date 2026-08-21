@@ -62,6 +62,7 @@ export default function ConfigPanel() {
         {node.type === 'llm' && <LlmFields data={node.data} patch={patch} />}
         {node.type === 'knowledge_base' && <KnowledgeBaseFields data={node.data} patch={patch} />}
         {node.type === 'web_search' && <WebSearchFields data={node.data} patch={patch} />}
+        {node.type === 'youtube' && <YouTubeFields data={node.data} patch={patch} />}
         {node.type === 'email' && <EmailFields data={node.data} patch={patch} />}
         {node.type === 'drive' && <DriveFields data={node.data} patch={patch} />}
         {node.type === 'calendar' && <CalendarFields data={node.data} patch={patch} />}
@@ -145,6 +146,25 @@ function WebSearchFields({ data, patch }) {
       </Field>
       <Field label="Max results">
         <TextInput type="number" min={1} max={10} value={data.max_results ?? 5} onChange={(e) => patch({ max_results: Number(e.target.value) })} />
+      </Field>
+    </>
+  )
+}
+
+function YouTubeFields({ data, patch }) {
+  const configured = useCatalogStore((s) => s.youtubeConfigured)
+  return (
+    <>
+      {!configured && (
+        <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+          Not set up yet. <Link to="/settings" className="text-copper hover:underline">Add a YouTube API key on Settings</Link>.
+        </p>
+      )}
+      <Field label="Search query" hint="Leave blank to use the previous node's output">
+        <TextArea rows={2} value={data.query || ''} onChange={(e) => patch({ query: e.target.value })} placeholder="sourdough baking" />
+      </Field>
+      <Field label="Max results" hint="Includes view counts for each video">
+        <TextInput type="number" min={1} max={25} value={data.max_results ?? 10} onChange={(e) => patch({ max_results: Number(e.target.value) })} />
       </Field>
     </>
   )

@@ -348,6 +348,33 @@ TEMPLATES = [
             ],
         },
     },
+    {
+        "id": "youtube-video-idea-generator",
+        "name": "YouTube Video Idea Generator",
+        "description": "Searches YouTube for what's already been made on a topic - titles, channels, view counts - then proposes concrete new video ideas based on what's covered well, what's thin, and what's missing. Type a topic to get started. Needs a YouTube API key on the Settings page.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "yt", "type": "youtube", "position": _pos(1), "data": {"max_results": 10}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "You are a YouTube content strategist. The context is a list of existing videos "
+                        "on this topic (title, channel, view count, description). Briefly note what's "
+                        "already well covered (high view counts) versus thin or missing, then propose "
+                        "5-8 concrete video ideas that fill a real gap - specific titles, not vague "
+                        "categories. For each idea, say in one line why it's a gap based on what you see "
+                        "in the context, not a generic reason."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "yt"},
+                {"id": "e2", "source": "yt", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
 ]
 
 _BY_ID = {t["id"]: t for t in TEMPLATES}

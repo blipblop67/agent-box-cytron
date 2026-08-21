@@ -48,9 +48,10 @@ export default function ConnectionsPage() {
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-lg font-semibold text-ink">Connections</h1>
       <p className="mt-1 text-sm text-ink-muted">
-        Gmail and Drive connect to your own account - a tool node acts as whoever runs the flow.
-        Telegram bots below work differently: each one belongs to whichever flows you wire it into,
-        regardless of who runs them - so different agents can message through different bots.
+        Gmail, Drive, and Calendar connect to your own account - a tool node acts as whoever runs
+        the flow. Telegram bots below work differently: each one belongs to whichever flows you
+        wire it into, regardless of who runs them - so different agents can message through
+        different bots.
       </p>
 
       {error && (

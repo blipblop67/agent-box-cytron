@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper, Globe } from 'lucide-react'
+import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper, Globe, Clapperboard } from 'lucide-react'
 import { api } from '../lib/api'
 import { Field, TextInput, Select } from '../components/common/FormField'
 import Button from '../components/common/Button'
@@ -37,6 +37,7 @@ export default function SettingsPage() {
       <LlmSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <GoogleSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <UpdatesCard isAdmin={isAdmin} />
     </div>
   )
@@ -152,16 +153,17 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
   return (
     <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
       <div>
-        <h2 className="text-sm font-semibold text-ink">Google integration (Gmail + Drive)</h2>
+        <h2 className="text-sm font-semibold text-ink">Google integration (Gmail + Drive + Calendar)</h2>
         <p className="mt-0.5 text-xs text-ink-muted">
-          The <b>hub-wide default</b> Google app - everyone's Gmail/Drive connections use this
-          unless they've set up their own on their{' '}
+          The <b>hub-wide default</b> Google app - everyone's Gmail/Drive/Calendar connections use
+          this unless they've set up their own on their{' '}
           <Link to="/account" className="text-copper hover:underline">Account page</Link> instead,
           which then wins just for them. One OAuth client here covers the whole team; create it at{' '}
           <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
             console.cloud.google.com <ExternalLink size={10} className="inline" />
           </a>{' '}
-          - enable the Gmail and Drive APIs, add yourself as a test user, then paste the client ID/secret below.
+          - enable the Gmail, Drive, and Calendar APIs, add yourself as a test user, then paste the
+          client ID/secret below.
         </p>
       </div>
 
@@ -184,10 +186,11 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
 
       <div className="space-y-2 rounded-md border border-line-strong bg-surface-raised p-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-          Redirect URIs - add both to the OAuth client above
+          Redirect URIs - add all three to the OAuth client above
         </p>
         <RedirectUriRow label="Gmail" value={settings.google_email_redirect_uri} />
         <RedirectUriRow label="Drive" value={settings.google_drive_redirect_uri} />
+        <RedirectUriRow label="Calendar" value={settings.google_calendar_redirect_uri} />
       </div>
 
       {isAdmin && (
@@ -244,6 +247,66 @@ function WebSearchSettingsCard({ settings, setSettings, isAdmin }) {
             placeholder={settings.web_search_key_configured ? '••••••••••••  (leave blank to keep current key)' : 'tvly-...'}
           />
           {settings.web_search_key_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+        </div>
+      </Field>
+
+      {isAdmin && (
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="primary" disabled={!apiKey || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          {saved && <span className="text-xs text-signal">Saved</span>}
+        </div>
+      )}
+    </form>
+  )
+}
+
+function YouTubeSettingsCard({ settings, setSettings, isAdmin }) {
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      setSettings(await api.put('/settings', { youtube_api_key: apiKey }))
+      setApiKey('')
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <Clapperboard size={15} className="text-copper" />
+        <div>
+          <h2 className="text-sm font-semibold text-ink">YouTube search</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Powers the "YouTube" node - for the Video Idea Generator template, or any agent that
+            needs to know what's already on YouTube about a topic. A plain API key, not a Google
+            login - get one free in{' '}
+            <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+              Google Cloud Console <ExternalLink size={10} className="inline" />
+            </a>{' '}
+            (enable "YouTube Data API v3", then Credentials → Create Credentials → API key - the
+            same project as Gmail/Drive/Calendar works fine). Free tier covers roughly 100
+            searches a day.
+          </p>
+        </div>
+      </div>
+
+      <Field label="YouTube API key" hint={settings.youtube_key_configured ? undefined : 'No key configured yet'}>
+        <div className="flex items-center gap-2">
+          <TextInput
+            disabled={!isAdmin}
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={settings.youtube_key_configured ? '••••••••••••  (leave blank to keep current key)' : 'AIza...'}
+          />
+          {settings.youtube_key_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
         </div>
       </Field>
 

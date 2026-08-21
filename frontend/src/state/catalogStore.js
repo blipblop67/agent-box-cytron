@@ -4,8 +4,8 @@ import { api } from '../lib/api'
 // Shared read-mostly data the flow editor and a couple of pages all need:
 // which knowledge bases and Telegram bots exist (both visible-to-you lists,
 // same shared/private model), whether Gmail/Drive/Calendar are connected,
-// and whether web search is configured hub-wide. Kept as one small store
-// rather than re-fetching in five different places.
+// and whether web search / YouTube are configured hub-wide. Kept as one
+// small store rather than re-fetching in five different places.
 export const useCatalogStore = create((set) => ({
   knowledgeBases: [],
   telegramBots: [],
@@ -13,6 +13,7 @@ export const useCatalogStore = create((set) => ({
   drive: { connected: false },
   calendar: { connected: false },
   webSearchConfigured: false,
+  youtubeConfigured: false,
   loaded: false,
 
   async load() {
@@ -24,6 +25,11 @@ export const useCatalogStore = create((set) => ({
       api.get('/calendar/status'),
       api.get('/settings'),
     ])
-    set({ knowledgeBases, telegramBots, gmail, drive, calendar, webSearchConfigured: settings.web_search_key_configured, loaded: true })
+    set({
+      knowledgeBases, telegramBots, gmail, drive, calendar,
+      webSearchConfigured: settings.web_search_key_configured,
+      youtubeConfigured: settings.youtube_key_configured,
+      loaded: true,
+    })
   },
 }))

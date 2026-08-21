@@ -164,6 +164,7 @@ class SettingsOut(BaseModel):
     google_drive_redirect_uri: str
     google_calendar_redirect_uri: str
     web_search_key_configured: bool
+    youtube_key_configured: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -175,6 +176,7 @@ class SettingsUpdate(BaseModel):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     web_search_api_key: str | None = None
+    youtube_api_key: str | None = None
 
 
 class ScheduleCreate(BaseModel):
