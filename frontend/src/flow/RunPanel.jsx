@@ -4,6 +4,7 @@ import { useFlowEditorStore } from '../state/flowEditorStore'
 import { NODE_REGISTRY } from './nodeRegistry'
 import { api } from '../lib/api'
 import Button from '../components/common/Button'
+import Markdown from '../components/common/Markdown'
 
 export default function RunPanel({ open, onToggle }) {
   const [input, setInput] = useState('')
@@ -101,7 +102,9 @@ export default function RunPanel({ open, onToggle }) {
                 ))}
                 <div className="rounded-md border border-copper/30 bg-copper-dim px-2.5 py-2">
                   <div className="text-[11px] font-medium uppercase tracking-wide text-copper-bright">Final output</div>
-                  <div className="mt-1 whitespace-pre-wrap text-sm text-ink">{runResult.output}</div>
+                  <div className="mt-1 text-sm text-ink">
+                    <Markdown>{runResult.output}</Markdown>
+                  </div>
                 </div>
               </div>
             )}

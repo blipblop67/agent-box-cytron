@@ -285,16 +285,30 @@ function DriveFields({ data, patch }) {
 }
 
 function TelegramFields({ data, patch }) {
-  const telegram = useCatalogStore((s) => s.telegram)
+  const telegramBots = useCatalogStore((s) => s.telegramBots)
+  const selectedBot = telegramBots.find((b) => b.id === data.bot_id)
+
   return (
     <>
-      {!telegram.connected || !telegram.chat_linked ? (
+      <Field label="Bot">
+        <Select value={data.bot_id || ''} onChange={(e) => patch({ bot_id: e.target.value })}>
+          <option value="">Select a bot…</option>
+          {telegramBots.map((bot) => (
+            <option key={bot.id} value={bot.id}>{bot.name}{bot.chat_linked ? '' : ' (not linked)'}</option>
+          ))}
+        </Select>
+      </Field>
+      {telegramBots.length === 0 ? (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
-          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Telegram</Link>.
+          No bots yet. <Link to="/connections" className="text-copper hover:underline">Add one on Connections</Link>.
         </p>
-      ) : (
-        <p className="text-[11px] text-ink-faint">Connected as {telegram.bot_username}</p>
-      )}
+      ) : selectedBot && !selectedBot.chat_linked ? (
+        <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+          "{selectedBot.name}" isn't linked to a chat yet. <Link to="/connections" className="text-copper hover:underline">Finish linking it</Link>.
+        </p>
+      ) : selectedBot ? (
+        <p className="text-[11px] text-ink-faint">Connected as {selectedBot.bot_username}</p>
+      ) : null}
       <Field label="Action">
         <Select value={data.action || 'send'} onChange={(e) => patch({ action: e.target.value })}>
           <option value="send">Send a message</option>

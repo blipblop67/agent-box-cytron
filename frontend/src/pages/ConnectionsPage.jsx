@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Mail, HardDrive, Send, CircleCheck, Unplug, ExternalLink } from 'lucide-react'
+import { Mail, HardDrive, Send, CircleCheck, Unplug, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import Button from '../components/common/Button'
 import Badge from '../components/common/Badge'
-import { TextInput } from '../components/common/FormField'
+import { Field, TextInput, Select } from '../components/common/FormField'
+import { useUserStore } from '../state/userStore'
 
 const GOOGLE_SERVICES = [
   { key: 'email', label: 'Gmail', icon: Mail, description: 'Send, search, and reply to email through your own Gmail account.' },
@@ -44,7 +45,9 @@ export default function ConnectionsPage() {
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-lg font-semibold text-ink">Connections</h1>
       <p className="mt-1 text-sm text-ink-muted">
-        Each person connects their own accounts - a tool node acts as whoever runs the flow.
+        Gmail and Drive connect to your own account - a tool node acts as whoever runs the flow.
+        Telegram bots below work differently: each one belongs to whichever flows you wire it into,
+        regardless of who runs them - so different agents can message through different bots.
       </p>
 
       {error && (
@@ -94,48 +97,70 @@ export default function ConnectionsPage() {
           )
         })}
 
-        <TelegramCard />
+        <TelegramBotsSection />
       </div>
     </div>
   )
 }
 
-function TelegramCard() {
-  const [status, setStatus] = useState(null)
-  const [botToken, setBotToken] = useState('')
-  const [connecting, setConnecting] = useState(false)
-  const [linking, setLinking] = useState(false)
-  const [error, setError] = useState(null)
+function TelegramBotsSection() {
+  const [bots, setBots] = useState(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const currentUser = useUserStore((s) => s.user)
 
   async function refresh() {
-    setStatus(await api.get('/telegram/status'))
+    setBots(await api.get('/telegram/bots'))
   }
 
   useEffect(() => {
     refresh()
   }, [])
 
-  async function handleConnect(e) {
-    e.preventDefault()
-    setConnecting(true)
-    setError(null)
-    try {
-      await api.post('/telegram/connect', { bot_token: botToken })
-      setBotToken('')
-      refresh()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setConnecting(false)
-    }
-  }
+  if (bots === null) return null
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${bots.length > 0 ? 'bg-signal-dim text-signal' : 'bg-surface-raised text-ink-muted'}`}>
+            <Send size={18} />
+          </div>
+          <div>
+            <span className="text-sm font-medium text-ink">Telegram bots</span>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              {bots.length === 0 ? 'No bots added yet.' : `${bots.length} bot${bots.length === 1 ? '' : 's'} - shared ones are usable by any Telegram node in any flow.`}
+            </p>
+          </div>
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => setShowAddForm(true)}>
+          <Plus size={13} /> Add a bot
+        </Button>
+      </div>
+
+      {bots.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {bots.map((bot) => (
+            <BotRow key={bot.id} bot={bot} currentUser={currentUser} onChanged={refresh} />
+          ))}
+        </div>
+      )}
+
+      {showAddForm && <AddBotForm onClose={() => setShowAddForm(false)} onAdded={refresh} />}
+    </div>
+  )
+}
+
+function BotRow({ bot, currentUser, onChanged }) {
+  const [linking, setLinking] = useState(false)
+  const [error, setError] = useState(null)
+  const canManage = currentUser.role === 'admin' || bot.owner_id === currentUser.id
 
   async function handleLink() {
     setLinking(true)
     setError(null)
     try {
-      await api.post('/telegram/link', {})
-      refresh()
+      await api.post(`/telegram/bots/${bot.id}/link`, {})
+      onChanged()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -143,75 +168,99 @@ function TelegramCard() {
     }
   }
 
-  async function handleDisconnect() {
-    await api.delete('/telegram/auth')
-    refresh()
+  async function handleDelete() {
+    if (!confirm(`Remove "${bot.name}"? Any Telegram node using it will stop working.`)) return
+    await api.delete(`/telegram/bots/${bot.id}`)
+    onChanged()
   }
 
-  if (status === null) return null
-
-  const fullyConnected = status.connected && status.chat_linked
-
   return (
-    <div className="rounded-xl border border-line bg-surface p-4">
-      <div className="flex items-start gap-4">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${fullyConnected ? 'bg-signal-dim text-signal' : 'bg-surface-raised text-ink-muted'}`}>
-          <Send size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-ink">Telegram</span>
-            {fullyConnected ? (
-              <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Connected</Badge>
-            ) : status.connected ? (
-              <Badge variant="copper">Almost there</Badge>
-            ) : (
-              <Badge variant="neutral">Not connected</Badge>
-            )}
-          </div>
-
-          {fullyConnected ? (
-            <p className="mt-0.5 text-xs text-ink-muted">Messaging through {status.bot_username}</p>
-          ) : status.connected ? (
-            <div className="mt-1.5 space-y-2 text-xs text-ink-muted">
-              <p>
-                Bot saved as {status.bot_username}. Open Telegram, search for it, and send it any message -
-                then come back and click "Finish linking."
-              </p>
-              <Button variant="primary" size="sm" onClick={handleLink} disabled={linking}>
-                {linking ? 'Checking…' : 'Finish linking'}
-              </Button>
-            </div>
+    <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-ink">{bot.name}</span>
+          <Badge variant={bot.visibility === 'private' ? 'neutral' : 'signal'}>
+            {bot.visibility === 'private' ? <Lock size={9} className="mr-1" /> : <Users2 size={9} className="mr-1" />}
+            {bot.visibility}
+          </Badge>
+          {bot.chat_linked ? (
+            <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Linked</Badge>
           ) : (
-            <div className="mt-1.5">
-              <p className="text-xs text-ink-muted">
-                Send or read messages through a Telegram bot you control. Message{' '}
-                <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-copper hover:underline">
-                  @BotFather <ExternalLink size={10} className="inline" />
-                </a>{' '}
-                on Telegram, send <code className="text-ink">/newbot</code>, and paste the token it gives you below.
-              </p>
-              <form onSubmit={handleConnect} className="mt-2 flex gap-1.5">
-                <TextInput
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  placeholder="123456789:AA...your bot token"
-                  className="font-mono text-xs"
-                />
-                <Button type="submit" variant="primary" size="sm" disabled={!botToken.trim() || connecting}>
-                  {connecting ? 'Checking…' : 'Save'}
-                </Button>
-              </form>
-            </div>
+            <Badge variant="copper">Almost there</Badge>
           )}
-          {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
         </div>
-        {status.connected && (
-          <Button variant="ghost" size="sm" onClick={handleDisconnect}>
-            <Unplug size={13} /> Disconnect
-          </Button>
+        {canManage && (
+          <button onClick={handleDelete} className="rounded p-1 text-ink-faint hover:bg-danger-dim hover:text-danger" title="Remove bot">
+            <Trash2 size={13} />
+          </button>
         )}
       </div>
+      <p className="mt-1 text-xs text-ink-faint">{bot.bot_username}</p>
+      {!bot.chat_linked && canManage && (
+        <div className="mt-2 space-y-1.5">
+          <p className="text-xs text-ink-muted">
+            Open Telegram, search for {bot.bot_username}, and send it any message - then click below.
+          </p>
+          <Button variant="primary" size="sm" onClick={handleLink} disabled={linking}>
+            {linking ? 'Checking…' : 'Finish linking'}
+          </Button>
+        </div>
+      )}
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
     </div>
+  )
+}
+
+function AddBotForm({ onClose, onAdded }) {
+  const [name, setName] = useState('')
+  const [botToken, setBotToken] = useState('')
+  const [visibility, setVisibility] = useState('shared')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      await api.post('/telegram/bots', { name, bot_token: botToken, visibility })
+      onAdded()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-3 space-y-2.5 rounded-md border border-line-strong bg-surface-raised p-3">
+      <p className="text-xs text-ink-muted">
+        Message{' '}
+        <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+          @BotFather <ExternalLink size={10} className="inline" />
+        </a>{' '}
+        on Telegram, send <code className="text-ink">/newbot</code>, and paste the token it gives you below.
+      </p>
+      <Field label="Name" hint="How it shows up in a Telegram node's picker">
+        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Support Bot" autoFocus required />
+      </Field>
+      <Field label="Bot token">
+        <TextInput value={botToken} onChange={(e) => setBotToken(e.target.value)} placeholder="123456789:AA...your bot token" className="font-mono text-xs" required />
+      </Field>
+      <Field label="Visibility" hint="Shared bots are usable by anyone building a flow; private ones only by you">
+        <Select value={visibility} onChange={(e) => setVisibility(e.target.value)}>
+          <option value="shared">Shared with the team</option>
+          <option value="private">Private to me</option>
+        </Select>
+      </Field>
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <div className="flex justify-end gap-2 pt-0.5">
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+        <Button type="submit" variant="primary" size="sm" disabled={!name.trim() || !botToken.trim() || saving}>
+          {saving ? 'Checking…' : 'Add bot'}
+        </Button>
+      </div>
+    </form>
   )
 }

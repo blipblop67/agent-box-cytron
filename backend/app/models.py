@@ -219,8 +219,25 @@ class TemplateUse(BaseModel):
     name: str | None = None
 
 
-class TelegramConnectRequest(BaseModel):
+class TelegramBotCreate(BaseModel):
+    name: str
     bot_token: str
+    visibility: str = Field(default="shared", pattern="^(shared|private)$")
+
+
+class TelegramBotUpdate(BaseModel):
+    name: str | None = None
+    visibility: str | None = Field(default=None, pattern="^(shared|private)$")
+
+
+class TelegramBotOut(BaseModel):
+    id: str
+    name: str
+    owner_id: str
+    visibility: str
+    bot_username: str | None
+    chat_linked: bool
+    created_at: float
 
 
 class TelegramSendRequest(BaseModel):

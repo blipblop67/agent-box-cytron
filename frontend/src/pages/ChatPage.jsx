@@ -8,6 +8,7 @@ import { api } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import Button from '../components/common/Button'
 import EmptyState from '../components/common/EmptyState'
+import Markdown from '../components/common/Markdown'
 import { NODE_REGISTRY } from '../flow/nodeRegistry'
 
 export default function ChatPage() {
@@ -208,11 +209,11 @@ function ConversationView({ conversation, onMessageSent, onDetailChange }) {
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] ${m.role === 'user' ? '' : 'w-full'}`}>
                 <div
-                  className={`whitespace-pre-wrap rounded-xl px-3.5 py-2.5 text-sm ${
+                  className={`rounded-xl px-3.5 py-2.5 text-sm ${
                     m.role === 'user' ? 'bg-copper-dim text-ink' : 'border border-line bg-surface text-ink'
                   }`}
                 >
-                  {m.content}
+                  <Markdown>{m.content}</Markdown>
                 </div>
                 {m.role === 'assistant' && traces[m.id] && (
                   <TraceToggle

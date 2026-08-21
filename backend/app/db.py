@@ -138,6 +138,18 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
     created_at REAL NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS telegram_bots (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,                -- e.g. "Support Bot" - what shows up in a Telegram node's picker
+    owner_id TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'shared',  -- 'shared' (whole team) | 'private' (owner only) - same as knowledge_bases
+    encrypted_token TEXT NOT NULL,     -- Fernet-encrypted JSON: {bot_token, chat_id}
+    bot_username TEXT,
+    chat_linked INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (owner_id) REFERENCES users(id)
+);
 """
 
 
@@ -165,14 +177,32 @@ def init_db() -> None:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Handles the one schema change made after this table already shipped:
-    adding password_hash to an existing users table. CREATE TABLE IF NOT
-    EXISTS doesn't add columns to a table that already exists, so a hub
-    upgraded from before real auth existed needs this to not just crash on
-    startup."""
+    """Schema changes made after this table already shipped."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
     if "password_hash" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+    # Telegram used to be one bot connection per user (in oauth_credentials,
+    # like Gmail/Drive). It's now a named, ownable resource (like a
+    # knowledge base) so different flows can use different bots. Anyone
+    # who already had a bot connected the old way gets it carried over
+    # automatically as "My bot", once, rather than losing it.
+    already_migrated = conn.execute(
+        "SELECT 1 FROM hub_settings WHERE key = 'telegram_bots_migrated'"
+    ).fetchone()
+    if not already_migrated:
+        old_rows = conn.execute("SELECT * FROM oauth_credentials WHERE provider = 'telegram'").fetchall()
+        for row in old_rows:
+            conn.execute(
+                "INSERT INTO telegram_bots (id, name, owner_id, visibility, encrypted_token, bot_username, "
+                "chat_linked, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_id(), "My bot", row["user_id"], "private", row["encrypted_token"],
+                 row["account_email"], 1, time.time()),
+            )
+        conn.execute(
+            "INSERT INTO hub_settings (key, value) VALUES ('telegram_bots_migrated', '1') "
+            "ON CONFLICT(key) DO NOTHING"
+        )
 
 
 def new_id() -> str:
@@ -225,6 +255,7 @@ def reassign_user_data(old_user_id: str, new_user_id: str) -> None:
         conn.execute("UPDATE knowledge_bases SET owner_id = ? WHERE owner_id = ?", (new_user_id, old_user_id))
         conn.execute("UPDATE documents SET uploaded_by = ? WHERE uploaded_by = ?", (new_user_id, old_user_id))
         conn.execute("UPDATE schedules SET created_by = ? WHERE created_by = ?", (new_user_id, old_user_id))
+        conn.execute("UPDATE telegram_bots SET owner_id = ? WHERE owner_id = ?", (new_user_id, old_user_id))
 
 
 def delete_user(user_id: str) -> None:
@@ -604,3 +635,63 @@ def list_conversation_messages(conversation_id: str) -> list[sqlite3.Row]:
             "SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at",
             (conversation_id,),
         ).fetchall()
+
+
+# ---- telegram bots (named, ownable resource - like a knowledge base) -----------
+# A bot belongs to whoever created it, with the same shared/private visibility
+# as knowledge bases and flows, so different agents can be wired to different
+# bots regardless of who happens to run them - unlike Gmail/Drive, a bot is a
+# fixed identity in the world (its username), not a personal inbox.
+
+def create_telegram_bot(name: str, owner_id: str, visibility: str, encrypted_token: bytes,
+                         bot_username: str) -> str:
+    bot_id = new_id()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO telegram_bots (id, name, owner_id, visibility, encrypted_token, bot_username, "
+            "chat_linked, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (bot_id, name, owner_id, visibility, encrypted_token, bot_username, time.time()),
+        )
+    return bot_id
+
+
+def get_telegram_bot(bot_id: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM telegram_bots WHERE id = ?", (bot_id,)).fetchone()
+
+
+def list_telegram_bots(user_id: str, is_admin: bool = False) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        if is_admin:
+            return conn.execute("SELECT * FROM telegram_bots ORDER BY created_at DESC").fetchall()
+        return conn.execute(
+            "SELECT * FROM telegram_bots WHERE visibility = 'shared' OR owner_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        ).fetchall()
+
+
+def user_can_access_telegram_bot(bot: sqlite3.Row, user_id: str, is_admin: bool = False) -> bool:
+    return is_admin or bot["visibility"] == "shared" or bot["owner_id"] == user_id
+
+
+def update_telegram_bot_token(bot_id: str, encrypted_token: bytes, chat_linked: bool) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE telegram_bots SET encrypted_token = ?, chat_linked = ? WHERE id = ?",
+            (encrypted_token, int(chat_linked), bot_id),
+        )
+
+
+def rename_telegram_bot(bot_id: str, name: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE telegram_bots SET name = ? WHERE id = ?", (name, bot_id))
+
+
+def set_telegram_bot_visibility(bot_id: str, visibility: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE telegram_bots SET visibility = ? WHERE id = ?", (visibility, bot_id))
+
+
+def delete_telegram_bot(bot_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM telegram_bots WHERE id = ?", (bot_id,))

@@ -50,9 +50,11 @@ Drive tool integrations. Pairs with the React frontend in
   search, and reply from an Email node
 - **Drive** — same per-person connection, same personal-app option; list,
   read (including native Docs/Sheets/Slides), and create files from a Drive node
-- **Telegram** — each team member connects their own bot (no Google Cloud
-  setup needed, just a token from @BotFather); send or read messages from a
-  Telegram node - a good fit for notifications
+- **Telegram** — named bots (shared or private, same model as knowledge
+  bases), not one connection per person: create as many as you want (just a
+  token from @BotFather, no Google Cloud setup), and each Telegram node in a
+  flow picks which one to use - a Customer Support flow and a Sales flow can
+  message through two entirely different bots regardless of who runs them
 - **Self-updates** — an admin points the hub at a GitHub repo/branch from
   the Settings page; "Check for updates" compares against what's installed,
   "Update now" downloads, rebuilds, and restarts - all from the browser, no
@@ -96,6 +98,7 @@ python3 tests/test_user_deletion.py   # Admin removes a team member - their flow
 python3 tests/test_conversations.py   # Proves conversation memory by inspecting the actual LLM payload
 python3 tests/test_web_search_and_documents.py   # Web search node + one-off document text extraction
 python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean messages, not raw httpx text
+python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
 python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
 python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
 ```
@@ -175,20 +178,37 @@ If a connection attempt does fail, it now lands on a page explaining the
 likely cause (`app/oauth_errors.py`) instead of a bare error - that's the
 first place to look.
 
-### Setting up Telegram (per person, no cloud console needed)
+### Setting up Telegram (no cloud console needed)
 
-No project or credentials to set up - each person creates their own bot:
+Bots are a named resource, not a personal connection - shared with the
+whole team by default, or private to whoever created it, the exact same
+model as a knowledge base. This is what makes "different agents, different
+bots" possible: a Telegram node in any flow picks a specific bot from a
+dropdown, so a Customer Support Assistant and a completely separate Sales
+Outreach agent can message through two different bots even though the same
+person might build or run both flows.
 
 1. In Telegram, message **@BotFather**, send `/newbot`, and follow the
    prompts. It replies with a token that looks like `123456789:AA...`.
-2. On the Connections page, paste that token in and save - the hub verifies
-   it immediately against Telegram's API.
+2. On the Connections page, click "Add a bot" - give it a name (this is
+   what shows up in a Telegram node's picker, e.g. "Support Bot"), paste the
+   token, and choose whether it's shared with the team or private to you.
+   The hub verifies the token immediately against Telegram's API.
 3. Open a chat with the new bot (search for the username BotFather gave you)
    and send it any message.
-4. Back on the Connections page, click "Finish linking" - the hub looks at
-   the bot's most recent message to find which chat to talk back to.
+4. Back on Connections, click "Finish linking" on that bot - the hub looks
+   at its most recent message to find which chat to talk back to.
 
-A Telegram node can then send or read messages from that same chat.
+Repeat for as many bots as you want. Each one is independent - linking or
+removing one doesn't touch any other, and a flow's Telegram node keeps
+using whichever bot it's set to regardless of who clicks Run, the same way
+a Knowledge base node keeps searching the same knowledge base regardless of
+who's asking.
+
+**Upgrading from before this existed**: if you already had a single bot
+connected the old way, it's carried forward automatically the first time
+the hub starts on this version - named "My bot," private to whoever
+connected it, still linked. Nothing to redo.
 
 ### Setting up web search
 
@@ -319,6 +339,25 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Telegram bots are a resource, not a connection.** Gmail/Drive are
+  personal - a tool node acts as whoever runs the flow, since a Gmail node
+  sending "from you" only makes sense if it's *your* Gmail. A bot doesn't
+  work that way: its identity (the username people message) is fixed
+  regardless of who built or runs the flow, so it's modeled like a
+  knowledge base instead - a named, ownable, shared-or-private resource
+  (`telegram_bots` table) that a Telegram node picks by id
+  (`data.bot_id`), the same way a Knowledge base node picks a `kb_id`.
+  This is what actually makes "different agents, different bots" work:
+  the bot is a property of the flow's wiring, not of whoever's logged in.
+- **LLM output is rendered as markdown everywhere it's shown** - Chat
+  messages and the Run panel's output share one component
+  (`components/common/Markdown.jsx`, react-markdown + remark-gfm +
+  remark-math + rehype-katex) rather than each screen inventing its own
+  text-formatting rules. Math renders as actual typeset formulas via
+  KaTeX, not literal `$...$` characters - worth knowing if you ever swap
+  the LLM provider or model: whatever markdown/LaTeX conventions it uses
+  should render correctly without any hub-side changes, since parsing
+  happens generically, not by pattern-matching your prompts.
 - **Conversation memory is a parameter, not a fork.** `flow_engine.run_flow`
   takes an optional `history` list; a plain Run never passes one (unchanged,
   one-shot behavior), while `conversation_routes.py`'s send-message endpoint

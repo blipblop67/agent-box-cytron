@@ -137,7 +137,7 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
         return _execute_drive_node(data, node_input, run_input, user_id)
 
     if node_type == "telegram":
-        return _execute_telegram_node(data, node_input, run_input, user_id)
+        return _execute_telegram_node(data, node_input, run_input)
 
     if node_type == "output":
         return node_input or run_input
@@ -187,16 +187,22 @@ def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: st
     raise ValueError(f"Unknown drive action '{action}'")
 
 
-def _execute_telegram_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
-    creds = telegram_tokens.get_credentials(user_id)
+def _execute_telegram_node(data: dict, node_input: str, run_input: str) -> str:
+    bot_id = data.get("bot_id")
+    if not bot_id:
+        raise ValueError("This Telegram node has no bot selected")
+    bot = db.get_telegram_bot(bot_id)
+    if bot is None:
+        raise ValueError("The selected bot no longer exists")
+    creds = telegram_tokens.get_credentials(bot_id)
     if creds is None or creds["chat_id"] is None:
-        raise ValueError("Telegram isn't connected for this user yet - see the Connections page")
+        raise ValueError(f"'{bot['name']}' isn't fully linked yet - see the Connections page")
 
     action = data.get("action", "send")
     if action == "send":
         text = node_input or data.get("message") or run_input
         telegram_client.send_message(creds["bot_token"], creds["chat_id"], text)
-        return f"Sent to Telegram ({creds['bot_username']})"
+        return f"Sent via {bot['name']} ({creds['bot_username']})"
     if action == "read":
         messages = telegram_client.get_recent_messages(
             creds["bot_token"], creds["chat_id"], limit=data.get("max_results") or 10,

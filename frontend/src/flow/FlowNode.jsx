@@ -3,7 +3,7 @@ import { NODE_REGISTRY, CATEGORY_CLASSES } from './nodeRegistry'
 import { useFlowEditorStore } from '../state/flowEditorStore'
 import { useCatalogStore } from '../state/catalogStore'
 
-function subtitleFor(type, data, knowledgeBases) {
+function subtitleFor(type, data, knowledgeBases, telegramBots) {
   switch (type) {
     case 'input':
       return 'Starting point of the run'
@@ -24,8 +24,11 @@ function subtitleFor(type, data, knowledgeBases) {
       if (data.action === 'read') return data.file_name || (data.file_id ? 'Read a file' : 'Read - no file selected')
       if (data.action === 'create') return data.name ? `Create "${data.name}"` : 'Create a new file'
       return data.search ? `List "${data.search}"` : 'List files'
-    case 'telegram':
-      return data.action === 'read' ? 'Read recent messages' : 'Send a message'
+    case 'telegram': {
+      const bot = telegramBots.find((b) => b.id === data.bot_id)
+      const botLabel = bot ? bot.name : 'No bot selected'
+      return `${botLabel} · ${data.action === 'read' ? 'Read' : 'Send'}`
+    }
     case 'calculator':
       return data.expression ? data.expression : 'Uses the input as the expression'
     default:
@@ -38,6 +41,7 @@ export default function FlowNode({ id, type, data, selected }) {
   const classes = CATEGORY_CLASSES[meta.category]
   const Icon = meta.icon
   const knowledgeBases = useCatalogStore((s) => s.knowledgeBases)
+  const telegramBots = useCatalogStore((s) => s.telegramBots)
   const runResult = useFlowEditorStore((s) => s.runResult)
   const step = runResult?.trace?.find((t) => t.node_id === id)
   const status = step ? (step.error ? 'error' : 'ok') : null
@@ -60,7 +64,7 @@ export default function FlowNode({ id, type, data, selected }) {
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-ink">{meta.label}</div>
           <div className="mt-0.5 truncate font-mono text-[11px] text-ink-muted">
-            {subtitleFor(type, data, knowledgeBases)}
+            {subtitleFor(type, data, knowledgeBases, telegramBots)}
           </div>
         </div>
       </div>

@@ -32,7 +32,7 @@ export const NODE_DEFAULTS = {
   web_search: { query: '', max_results: 5 },
   email: { action: 'send', to: '', subject: '', body: '', query: '', max_results: 5 },
   drive: { action: 'list', search: '', file_id: '', file_name: '', name: '', content: '', mime_type: 'text/plain' },
-  telegram: { action: 'send', message: '', max_results: 10 },
+  telegram: { bot_id: '', action: 'send', message: '', max_results: 10 },
   calculator: { expression: '' },
   output: {},
 }

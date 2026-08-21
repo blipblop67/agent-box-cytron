@@ -1,8 +1,9 @@
 """
-Exercises the whole Telegram integration - connect a bot token, link a chat
-by "sending" the bot a message, send/read through it, and use it from inside
-a real flow. Mocks only Telegram's HTTP API. Run with:
-    python3 tests/test_telegram.py
+Exercises the new Telegram model: bots are named, ownable resources (shared
+or private) rather than one bot per user - so the actual point of the
+redesign, different flows using different bots regardless of who runs them,
+gets a real end-to-end test, not just CRUD on a single connection.
+Run with: python3 tests/test_telegram.py
 """
 import os
 import sys
@@ -21,11 +22,13 @@ from _auth_helper import auth_headers  # noqa: E402
 
 db.init_db()
 
-BOT_TOKEN = "123456:FAKE-BOT-TOKEN"
-CHAT_ID = 999888777
+BOT_A_TOKEN = "111:SUPPORT-BOT-TOKEN"
+BOT_B_TOKEN = "222:SALES-BOT-TOKEN"
+CHAT_A = 111000
+CHAT_B = 222000
 
-# Simulates the person messaging their bot once, between /connect and /link
-_pending_updates = []
+# Simulates each bot having received a message, between create and link
+_pending_updates = {BOT_A_TOKEN: [], BOT_B_TOKEN: []}
 
 
 class FakeResponse:
@@ -37,19 +40,16 @@ class FakeResponse:
 
 
 def fake_post(url, json=None, **kwargs):
-    assert url.startswith(f"https://api.telegram.org/bot{BOT_TOKEN}/")
-    method = url.rsplit("/", 1)[-1]
-
-    if method == "getMe":
-        return FakeResponse({"ok": True, "result": {"id": 42, "username": "my_agent_hub_bot", "is_bot": True}})
-
-    if method == "getUpdates":
-        return FakeResponse({"ok": True, "result": list(_pending_updates)})
-
-    if method == "sendMessage":
-        return FakeResponse({"ok": True, "result": {"message_id": 1, "chat": {"id": json["chat_id"]}, "text": json["text"]}})
-
-    raise AssertionError(f"unexpected Telegram method {method}")
+    for token, username in ((BOT_A_TOKEN, "support_bot"), (BOT_B_TOKEN, "sales_bot")):
+        if url.startswith(f"https://api.telegram.org/bot{token}/"):
+            method = url.rsplit("/", 1)[-1]
+            if method == "getMe":
+                return FakeResponse({"ok": True, "result": {"id": 1, "username": username, "is_bot": True}})
+            if method == "getUpdates":
+                return FakeResponse({"ok": True, "result": list(_pending_updates[token])})
+            if method == "sendMessage":
+                return FakeResponse({"ok": True, "result": {"message_id": 1, "chat": {"id": json["chat_id"]}, "text": json["text"]}})
+    raise AssertionError(f"unexpected Telegram call: {url}")
 
 
 def fake_post_invalid_token(url, json=None, **kwargs):
@@ -61,76 +61,109 @@ def fake_post_invalid_token(url, json=None, **kwargs):
 def main():
     client = TestClient(app)
     headers = auth_headers(client, "Alex")
+    sam_headers = auth_headers(client, "Sam")
 
     # --- rejects an invalid token up front ---
     with patch("httpx.post", side_effect=fake_post_invalid_token):
-        bad = client.post("/api/telegram/connect", headers=headers, json={"bot_token": "nope"})
+        bad = client.post("/api/telegram/bots", headers=headers, json={"name": "Bad Bot", "bot_token": "nope"})
     assert bad.status_code == 400 and "valid bot token" in bad.text
     print("[ok] an invalid bot token is rejected immediately")
 
-    assert client.get("/api/telegram/status", headers=headers).json() == {"connected": False}
+    assert client.get("/api/telegram/bots", headers=headers).json() == []
 
-    # --- step 1: save a valid token ---
+    # --- Alex creates two bots: one shared, one private ---
     with patch("httpx.post", side_effect=fake_post):
-        connected = client.post("/api/telegram/connect", headers=headers, json={"bot_token": BOT_TOKEN}).json()
-    assert connected["connected"] is True
-    assert connected["chat_linked"] is False
-    assert connected["bot_username"] == "@my_agent_hub_bot"
-    print("[ok] bot token saved, not yet linked to a chat")
+        support_bot = client.post("/api/telegram/bots", headers=headers, json={
+            "name": "Support Bot", "bot_token": BOT_A_TOKEN, "visibility": "shared",
+        }).json()
+        sales_bot = client.post("/api/telegram/bots", headers=headers, json={
+            "name": "Sales Bot", "bot_token": BOT_B_TOKEN, "visibility": "private",
+        }).json()
+    assert support_bot["chat_linked"] is False and support_bot["bot_username"] == "support_bot"
+    assert sales_bot["chat_linked"] is False
+    print(f"[ok] created two bots: {support_bot['id']} (shared), {sales_bot['id']} (private)")
 
-    # --- trying to link before the person has messaged the bot ---
+    # --- Sam sees the shared bot but not the private one ---
+    sam_bots = client.get("/api/telegram/bots", headers=sam_headers).json()
+    sam_bot_ids = {b["id"] for b in sam_bots}
+    assert support_bot["id"] in sam_bot_ids
+    assert sales_bot["id"] not in sam_bot_ids
+    print("[ok] Sam sees the shared bot but not Alex's private one")
+
+    # --- linking before any message exists gives a clear instruction ---
     with patch("httpx.post", side_effect=fake_post):
-        too_early = client.post("/api/telegram/link", headers=headers)
+        too_early = client.post(f"/api/telegram/bots/{support_bot['id']}/link", headers=headers)
     assert too_early.status_code == 400 and "No messages found" in too_early.text
     print("[ok] linking before any message exists gives a clear instruction")
 
-    # --- the person messages their bot ---
-    _pending_updates.append({
-        "update_id": 1,
-        "message": {"chat": {"id": CHAT_ID}, "text": "hi", "date": 1234567890, "from": {"first_name": "Alex"}},
+    # --- someone messages each bot, then both get linked ---
+    _pending_updates[BOT_A_TOKEN].append({
+        "update_id": 1, "message": {"chat": {"id": CHAT_A}, "text": "hi", "date": 1, "from": {"first_name": "Alex"}},
     })
-
-    # --- step 2: link succeeds now ---
+    _pending_updates[BOT_B_TOKEN].append({
+        "update_id": 1, "message": {"chat": {"id": CHAT_B}, "text": "hi", "date": 1, "from": {"first_name": "Alex"}},
+    })
     with patch("httpx.post", side_effect=fake_post):
-        linked = client.post("/api/telegram/link", headers=headers).json()
-    assert linked["chat_linked"] is True
-    print("[ok] linked successfully once a message exists")
+        linked_a = client.post(f"/api/telegram/bots/{support_bot['id']}/link", headers=headers).json()
+        linked_b = client.post(f"/api/telegram/bots/{sales_bot['id']}/link", headers=headers).json()
+    assert linked_a["chat_linked"] is True and linked_b["chat_linked"] is True
+    print("[ok] both bots linked to their own chat")
 
-    # --- send / read through the REST endpoints ---
+    # --- a non-owner can't delete or relink someone else's bot ---
+    forbidden_delete = client.delete(f"/api/telegram/bots/{sales_bot['id']}", headers=sam_headers)
+    assert forbidden_delete.status_code in (403, 404)  # 404 if Sam can't even see the private bot
+    print("[ok] a non-owner can't delete someone else's bot")
+
+    # --- THE ACTUAL POINT: two flows, two different bots, proven by which token each call used ---
+    calls = []
+
+    def recording_post(url, json=None, **kwargs):
+        calls.append(url)
+        return fake_post(url, json=json, **kwargs)
+
+    support_flow = client.post("/api/flows", headers=headers, json={"name": "Customer Support"}).json()
+    sales_flow = client.post("/api/flows", headers=headers, json={"name": "Sales Outreach"}).json()
+
+    def telegram_graph(bot_id):
+        return {
+            "nodes": [
+                {"id": "in", "type": "input", "position": {"x": 0, "y": 0}, "data": {}},
+                {"id": "tg", "type": "telegram", "position": {"x": 200, "y": 0}, "data": {"action": "send", "bot_id": bot_id}},
+                {"id": "out", "type": "output", "position": {"x": 400, "y": 0}, "data": {}},
+            ],
+            "edges": [{"id": "e1", "source": "in", "target": "tg"}, {"id": "e2", "source": "tg", "target": "out"}],
+        }
+
+    client.put(f"/api/flows/{support_flow['id']}", headers=headers, json={"graph": telegram_graph(support_bot["id"])})
+    client.put(f"/api/flows/{sales_flow['id']}", headers=headers, json={"graph": telegram_graph(sales_bot["id"])})
+
+    with patch("httpx.post", side_effect=recording_post):
+        result_a = client.post(f"/api/flows/{support_flow['id']}/run", headers=headers, json={"input": "A customer needs help"})
+        result_b = client.post(f"/api/flows/{sales_flow['id']}/run", headers=headers, json={"input": "New lead came in"})
+
+    assert result_a.status_code == 200 and result_b.status_code == 200
+    assert "Support Bot" in result_a.json()["output"] and "support_bot" in result_a.json()["output"]
+    assert "Sales Bot" in result_b.json()["output"] and "sales_bot" in result_b.json()["output"]
+    assert any(BOT_A_TOKEN in c for c in calls)
+    assert any(BOT_B_TOKEN in c for c in calls)
+    print(f"[ok] Customer Support flow used Support Bot: \"{result_a.json()['output']}\"")
+    print(f"[ok] Sales Outreach flow used Sales Bot: \"{result_b.json()['output']}\"")
+    print("[ok] confirmed via the actual mocked HTTP calls that each flow hit a different bot token")
+
+    # --- read via the per-bot REST endpoint too ---
+    _pending_updates[BOT_A_TOKEN].append({
+        "update_id": 2, "message": {"chat": {"id": CHAT_A}, "text": "reply", "date": 2, "from": {"first_name": "Alex"}},
+    })
     with patch("httpx.post", side_effect=fake_post):
-        sent = client.post("/api/telegram/send", headers=headers, json={"text": "hello from the hub"})
-        assert sent.status_code == 200
-        print("[ok] sent a message via /api/telegram/send")
+        msgs = client.get(f"/api/telegram/bots/{support_bot['id']}/messages", headers=headers).json()
+    assert any(m["text"] == "reply" for m in msgs)
+    print("[ok] read recent messages via the per-bot REST endpoint")
 
-        _pending_updates.append({
-            "update_id": 2,
-            "message": {"chat": {"id": CHAT_ID}, "text": "reply from Alex", "date": 1234567999, "from": {"first_name": "Alex"}},
-        })
-        msgs = client.get("/api/telegram/messages", headers=headers).json()
-        assert any(m["text"] == "reply from Alex" for m in msgs)
-        print(f"[ok] read {len(msgs)} recent message(s) via /api/telegram/messages")
-
-    # --- a flow with a Telegram send node ---
-    flow = client.post("/api/flows", headers=headers, json={"name": "Notify me"}).json()
-    graph = {
-        "nodes": [
-            {"id": "in", "type": "input", "position": {"x": 0, "y": 0}, "data": {}},
-            {"id": "tg", "type": "telegram", "position": {"x": 200, "y": 0}, "data": {"action": "send"}},
-            {"id": "out", "type": "output", "position": {"x": 400, "y": 0}, "data": {}},
-        ],
-        "edges": [{"id": "e1", "source": "in", "target": "tg"}, {"id": "e2", "source": "tg", "target": "out"}],
-    }
-    client.put(f"/api/flows/{flow['id']}", headers=headers, json={"graph": graph})
-    with patch("httpx.post", side_effect=fake_post):
-        result = client.post(f"/api/flows/{flow['id']}/run", headers=headers, json={"input": "Build finished!"})
-    assert result.status_code == 200, result.text
-    assert "Sent to Telegram" in result.json()["output"]
-    print(f"[ok] flow with a Telegram node ran: \"{result.json()['output']}\"")
-
-    # --- disconnect ---
-    client.delete("/api/telegram/auth", headers=headers)
-    assert client.get("/api/telegram/status", headers=headers).json() == {"connected": False}
-    print("[ok] disconnect works")
+    # --- owner can delete their own bot; it disappears from the list ---
+    client.delete(f"/api/telegram/bots/{sales_bot['id']}", headers=headers)
+    remaining = client.get("/api/telegram/bots", headers=headers).json()
+    assert not any(b["id"] == sales_bot["id"] for b in remaining)
+    print("[ok] owner deleted their own bot")
 
     print("\nAll Telegram smoke tests passed.")
 
