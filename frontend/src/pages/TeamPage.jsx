@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import Badge from '../components/common/Badge'
 import Button from '../components/common/Button'
@@ -9,6 +10,7 @@ import { useUserStore } from '../state/userStore'
 export default function TeamPage() {
   const [members, setMembers] = useState(null)
   const [resetTarget, setResetTarget] = useState(null)
+  const [removeTarget, setRemoveTarget] = useState(null)
   const currentUser = useUserStore((s) => s.user)
 
   async function refresh() {
@@ -28,7 +30,7 @@ export default function TeamPage() {
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-lg font-semibold text-ink">Team</h1>
-      <p className="mt-1 text-sm text-ink-muted">Everyone who's registered on this hub. Admins can see private knowledge bases and flows, manage hub settings, and reset a teammate's password.</p>
+      <p className="mt-1 text-sm text-ink-muted">Everyone who's registered on this hub. Admins can see private knowledge bases and flows, manage hub settings, reset a teammate's password, and remove someone.</p>
 
       <div className="mt-6 overflow-hidden rounded-xl border border-line">
         {members?.map((member, i) => (
@@ -56,6 +58,13 @@ export default function TeamPage() {
                   >
                     {member.role === 'admin' ? 'Remove admin' : 'Make admin'}
                   </button>
+                  <button
+                    onClick={() => setRemoveTarget(member)}
+                    className="rounded-md p-1.5 text-ink-faint hover:bg-danger-dim hover:text-danger"
+                    title={`Remove ${member.name}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </>
               )}
             </div>
@@ -64,6 +73,9 @@ export default function TeamPage() {
       </div>
 
       {resetTarget && <ResetPasswordModal member={resetTarget} onClose={() => setResetTarget(null)} />}
+      {removeTarget && (
+        <RemoveMemberModal member={removeTarget} onClose={() => setRemoveTarget(null)} onRemoved={refresh} />
+      )}
     </div>
   )
 }
@@ -112,6 +124,44 @@ function ResetPasswordModal({ member, onClose }) {
           </div>
         </form>
       )}
+    </Modal>
+  )
+}
+
+function RemoveMemberModal({ member, onClose, onRemoved }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleConfirm() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await api.delete(`/users/${member.id}`)
+      onRemoved()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal title={`Remove ${member.name}?`} onClose={onClose}>
+      <div className="space-y-3 text-sm">
+        <p className="text-ink-muted">
+          This deletes their account and login. Their Gmail/Drive/Telegram connections go with it -
+          nobody can reuse those. Any flows or knowledge bases they own transfer to <b>you</b> instead
+          of being deleted, so the team doesn't lose shared work.
+        </p>
+        <p className="text-xs text-ink-faint">This can't be undone.</p>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="danger" onClick={handleConfirm} disabled={submitting}>
+            {submitting ? 'Removing…' : 'Remove member'}
+          </Button>
+        </div>
+      </div>
     </Modal>
   )
 }

@@ -9,7 +9,7 @@ import {
   Controls,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { ArrowLeft, Check, Lock, Users2, Clock } from 'lucide-react'
+import { ArrowLeft, Check, Lock, Users2, Clock, MessageSquare } from 'lucide-react'
 import ScheduleModal from '../flow/ScheduleModal'
 import { api } from '../lib/api'
 import { useFlowEditorStore } from '../state/flowEditorStore'
@@ -75,6 +75,7 @@ export default function FlowEditorPage() {
 }
 
 function Toolbar({ onBack }) {
+  const navigate = useNavigate()
   const flowId = useFlowEditorStore((s) => s.flowId)
   const flowName = useFlowEditorStore((s) => s.flowName)
   const flowVisibility = useFlowEditorStore((s) => s.flowVisibility)
@@ -110,6 +111,9 @@ function Toolbar({ onBack }) {
         {flowVisibility}
       </Badge>
       <span className="font-mono text-[11px] text-ink-faint">{dirty ? 'Unsaved changes' : 'Saved'}</span>
+      <Button variant="secondary" size="sm" onClick={() => navigate(`/flows/${flowId}/chat`)}>
+        <MessageSquare size={13} /> Chat
+      </Button>
       <Button variant="secondary" size="sm" onClick={() => setShowSchedule(true)}>
         <Clock size={13} /> Schedule
       </Button>

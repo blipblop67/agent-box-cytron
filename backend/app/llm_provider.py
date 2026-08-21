@@ -44,12 +44,24 @@ def chat_completion(messages: list[dict], *, model: str | None = None, provider:
     else:
         raise LlmNotConfigured(f"Unknown provider '{provider}'")
 
-    resp = httpx.post(
-        f"{base_url}/chat/completions",
-        headers=headers,
-        json={"model": model, "messages": messages, "temperature": temperature},
-        timeout=120,  # local/small models can be slow, especially on a first cold load
-    )
-    resp.raise_for_status()
+    try:
+        resp = httpx.post(
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json={"model": model, "messages": messages, "temperature": temperature},
+            timeout=120,  # local/small models can be slow, especially on a first cold load
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if status in (401, 403):
+            where = "Settings" if provider == "openrouter" and not user_id else "Settings or your Account page"
+            raise LlmNotConfigured(f"{provider} rejected the request ({status}) - double-check the API key on {where}") from exc
+        if status == 404:
+            raise LlmNotConfigured(f"{provider} doesn't recognize the model '{model}' - check it's spelled right and available") from exc
+        raise LlmNotConfigured(f"{provider} request failed ({status})") from exc
+    except httpx.HTTPError as exc:
+        raise LlmNotConfigured(f"Couldn't reach {provider}: {exc}") from exc
+
     data = resp.json()
     return data["choices"][0]["message"]["content"]

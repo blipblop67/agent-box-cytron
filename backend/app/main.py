@@ -18,6 +18,7 @@ from .template_routes import router as template_router
 from .telegram_routes import router as telegram_router
 from .update_routes import router as update_router
 from .account_routes import router as account_router
+from .conversation_routes import router as conversation_router
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ app.include_router(template_router, prefix="/api")
 app.include_router(telegram_router, prefix="/api")
 app.include_router(update_router, prefix="/api")
 app.include_router(account_router, prefix="/api")
+app.include_router(conversation_router, prefix="/api")
 
 
 @app.get("/healthz")

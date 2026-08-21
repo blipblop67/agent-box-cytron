@@ -156,6 +156,7 @@ class SettingsOut(BaseModel):
     google_client_secret_configured: bool
     google_email_redirect_uri: str
     google_drive_redirect_uri: str
+    web_search_key_configured: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -166,6 +167,7 @@ class SettingsUpdate(BaseModel):
     ollama_model: str | None = None
     google_client_id: str | None = None
     google_client_secret: str | None = None
+    web_search_api_key: str | None = None
 
 
 class ScheduleCreate(BaseModel):
@@ -286,3 +288,41 @@ class PersonalSettingsUpdate(BaseModel):
     google_client_secret: str | None = None
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
+
+
+class ConversationCreate(BaseModel):
+    title: str = "New conversation"
+
+
+class ConversationOut(BaseModel):
+    id: str
+    flow_id: str
+    title: str
+    created_at: float
+    updated_at: float
+
+
+class ConversationMessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: float
+
+
+class ConversationDetailOut(ConversationOut):
+    messages: list[ConversationMessageOut]
+
+
+class ConversationSendMessage(BaseModel):
+    content: str
+
+
+class ConversationSendResponse(BaseModel):
+    user_message: ConversationMessageOut
+    assistant_message: ConversationMessageOut
+    trace: list[FlowRunTraceStep]
+
+
+class ExtractedTextOut(BaseModel):
+    filename: str
+    content: str

@@ -1,13 +1,15 @@
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 
-from . import config, db, embeddings, ingest, security, vector_store
+from . import config, db, embeddings, ingest, loaders, security, vector_store
 from .auth import get_current_user
 from .models import (
     AdminPasswordResetRequest,
     ChunkResult,
     DocumentOut,
+    ExtractedTextOut,
     KnowledgeBaseCreate,
     KnowledgeBaseOut,
     QueryRequest,
@@ -71,6 +73,60 @@ def admin_reset_password(user_id: str, body: AdminPasswordResetRequest, admin: d
     db.set_user_password(user_id, security.hash_password(body.new_password))
     db.delete_all_sessions_for_user(user_id)  # they'll need to log in again with the new password
     return {"reset": True}
+
+
+@router.post("/extract-text", response_model=ExtractedTextOut)
+async def extract_text(file: UploadFile, user: dict = Depends(get_current_user)):
+    """Pulls the plain text out of an uploaded PDF/DOCX/CSV/TXT/MD - for
+    feeding a whole document into a flow or a chat message as one-off input
+    (a meeting transcript to summarize, say), not for building a searchable
+    Knowledge base. Nothing is saved - the file is read, extracted, and
+    discarded in the same request."""
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in config.ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {sorted(config.ALLOWED_EXTENSIONS)}")
+
+    contents = await file.read()
+    size_mb = len(contents) / (1024 * 1024)
+    if size_mb > config.MAX_UPLOAD_MB:
+        raise HTTPException(400, f"File is {size_mb:.1f}MB, limit is {config.MAX_UPLOAD_MB}MB")
+
+    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+        tmp.write(contents)
+        tmp.flush()
+        try:
+            text = loaders.load_text(Path(tmp.name))
+        except Exception as exc:  # noqa: BLE001 - a bad/corrupt file should be a clean 400, not a 500
+            raise HTTPException(400, f"Couldn't read this file: {exc}")
+
+    if not text.strip():
+        raise HTTPException(400, "No extractable text found in this file")
+    return ExtractedTextOut(filename=file.filename, content=text)
+
+
+def _would_remove_last_admin(user_id: str, target_role: str) -> bool:
+    if target_role != "admin":
+        return False
+    remaining = [u for u in db.list_users() if u["role"] == "admin" and u["id"] != user_id]
+    return len(remaining) == 0
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: str, admin: dict = Depends(get_current_user)):
+    if admin["role"] != "admin":
+        raise HTTPException(403, "Only a hub admin can remove team members")
+    if user_id == admin["id"]:
+        raise HTTPException(400, "You can't remove your own account this way")
+    target = db.get_user(user_id)
+    if target is None:
+        raise HTTPException(404, "No such user")
+    if _would_remove_last_admin(user_id, target["role"]):
+        raise HTTPException(400, "Can't remove the only admin - promote someone else first")
+    # their shared/private flows and knowledge bases transfer to whoever's
+    # removing them, rather than vanishing or leaving a dangling owner
+    db.reassign_user_data(user_id, admin["id"])
+    db.delete_user(user_id)
+    return {"deleted": user_id}
 
 
 @router.post("/knowledge-bases", response_model=KnowledgeBaseOut)

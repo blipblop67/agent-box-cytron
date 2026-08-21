@@ -132,6 +132,217 @@ TEMPLATES = [
             ],
         },
     },
+    {
+        "id": "customer-support-assistant",
+        "name": "Customer Support Assistant",
+        "description": "Answers customer questions from your own docs, staying on-topic and admitting what it doesn't know. Upload your FAQ/help docs to a knowledge base first, then use Chat (not just Run) so it remembers earlier questions in the same conversation.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "kb", "type": "knowledge_base", "position": _pos(1), "data": {"kb_id": "", "top_k": 5}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "You are a customer support assistant. Answer using only the context provided. "
+                        "Be warm but concise. If the context doesn't cover the question, say so plainly and "
+                        "suggest they contact a human - never make up an answer."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "kb"},
+                {"id": "e2", "source": "kb", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "product-recommendation-agent",
+        "name": "Product Recommendation Agent",
+        "description": "Recommends products from a catalog you upload (a CSV of products works well), asking about budget and preferences over a few messages. Use Chat, not Run - it needs to remember what the customer already told it.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "kb", "type": "knowledge_base", "position": _pos(1), "data": {"kb_id": "", "top_k": 6}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "You help customers pick a product from the catalog in the context. Ask a clarifying "
+                        "question (budget, use case, preferences) if you don't have enough to recommend well; "
+                        "otherwise recommend 1-3 specific options from the catalog and briefly say why."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "kb"},
+                {"id": "e2", "source": "kb", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "meeting-summarizer",
+        "name": "Meeting Summarizer",
+        "description": "Turns a raw transcript into a short summary with decisions and action items. Paste the transcript directly, or in Chat use the 📎 attach button to pull the text out of an uploaded file - no need to build a whole knowledge base for a one-off document.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "llm", "type": "llm", "position": _pos(1), "data": {
+                    "system_prompt": (
+                        "Summarize this meeting transcript. Structure your reply as: a 2-3 sentence overview, "
+                        "then 'Decisions' and 'Action items' as bullet lists (owner if mentioned). If something "
+                        "isn't in the transcript, don't invent it."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "llm"},
+                {"id": "e2", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "hr-policy-assistant",
+        "name": "HR Policy Assistant",
+        "description": "Answers questions about company policy from documents you upload (handbook, benefits guide, etc). Same pattern as Customer Support - upload docs to a knowledge base, then use Chat for follow-up questions.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "kb", "type": "knowledge_base", "position": _pos(1), "data": {"kb_id": "", "top_k": 5}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "You are an HR policy assistant. Answer using only the context provided, and quote or "
+                        "reference the specific policy where relevant. If a question needs a judgment call "
+                        "(disputes, terminations, legal questions), say this should go to an actual HR person "
+                        "instead of answering it yourself."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "kb"},
+                {"id": "e2", "source": "kb", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "research-assistant",
+        "name": "Research Assistant",
+        "description": "Searches the live web and synthesizes what it finds, with sources - for anything a static knowledge base can't answer because it needs current information. Needs a Tavily API key on the Settings page.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "search", "type": "web_search", "position": _pos(1), "data": {"max_results": 6}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "Synthesize the search results into a clear answer to the question. Cite sources by "
+                        "URL inline. If the results disagree or are inconclusive, say so rather than picking "
+                        "one arbitrarily."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "search"},
+                {"id": "e2", "source": "search", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "technical-support-agent",
+        "name": "Technical Support Agent",
+        "description": "Walks someone through troubleshooting using your product docs/manuals - upload them to a knowledge base first. Use Chat so it remembers what's already been tried when the first suggestion doesn't fix it.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "kb", "type": "knowledge_base", "position": _pos(1), "data": {"kb_id": "", "top_k": 5}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "You are a technical support agent. Using the context, give the single most likely fix "
+                        "first as clear numbered steps, not a wall of options. If the context doesn't cover the "
+                        "issue, say so and suggest escalating rather than guessing."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "kb"},
+                {"id": "e2", "source": "kb", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "student-learning-assistant",
+        "name": "Student Learning Assistant",
+        "description": "A tutor that explains concepts and checks understanding rather than just handing over answers. Genuinely needs Chat, not Run - tutoring only works as a back-and-forth.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "llm", "type": "llm", "position": _pos(1), "data": {
+                    "system_prompt": (
+                        "You are a patient tutor. Don't just give the final answer - explain the reasoning, "
+                        "check understanding with a short question when it fits, and adjust your explanation "
+                        "based on what the student says next. Encourage without being saccharine."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(2), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "llm"},
+                {"id": "e2", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "restaurant-recommendation-agent",
+        "name": "Restaurant Recommendation Agent",
+        "description": "Searches the web for current restaurant options and curates a short list - a static knowledge base can't cover this since restaurants open, close, and change hours. Needs a Tavily API key on the Settings page.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "search", "type": "web_search", "position": _pos(1), "data": {"max_results": 6}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "Recommend 3-5 restaurants from the search results that best match what was asked for "
+                        "(cuisine, location, vibe, budget). Briefly say why each one fits. Don't recommend a "
+                        "place the results don't actually support."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "search"},
+                {"id": "e2", "source": "search", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
+            ],
+        },
+    },
+    {
+        "id": "personal-productivity-coach",
+        "name": "Personal Productivity Coach",
+        "description": "An ongoing coach for goals and habits - remembers what you're working on from one check-in to the next. Use Chat, and keep coming back to the same conversation rather than starting a new one each time.",
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "llm", "type": "llm", "position": _pos(1), "data": {
+                    "system_prompt": (
+                        "You are a supportive but direct productivity coach. Help set concrete, specific goals, "
+                        "follow up on ones mentioned earlier in the conversation, and push back gently on vague "
+                        "plans ('be more productive') until they're actionable."
+                    ),
+                }},
+                {"id": "out", "type": "output", "position": _pos(2), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "llm"},
+                {"id": "e2", "source": "llm", "target": "out"},
+            ],
+        },
+    },
 ]
 
 _BY_ID = {t["id"]: t for t in TEMPLATES}

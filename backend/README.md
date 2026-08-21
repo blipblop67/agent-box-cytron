@@ -9,14 +9,30 @@ Drive tool integrations. Pairs with the React frontend in
 
 - **Real accounts** — name + password, bcrypt-hashed, session tokens, not a
   name-only stub. First person to register becomes admin. An admin can reset
-  anyone's password; anyone can change their own (`app/security.py`,
-  `app/auth_routes.py`)
-- **Flows** — save a graph of nodes (Input, LLM, Knowledge base, Email,
-  Drive, Calculator, Output), then run it and get back the final output plus
-  a step-by-step trace of what each node did
-- **Templates** — a small library of pre-built flows (`app/templates.py`)
-  someone can clone into their own flow in one click, graded roughly by
-  complexity so they double as an onboarding curriculum
+  anyone's password or remove someone from the team; anyone can change their
+  own password (`app/security.py`, `app/auth_routes.py`)
+- **Flows** — save a graph of nodes (Input, LLM, Knowledge base, Web search,
+  Email, Drive, Telegram, Calculator, Output), then run it and get back the
+  final output plus a step-by-step trace of what each node did
+- **Conversations** — a flow run through Chat (not Run) remembers earlier
+  turns: every LLM node gets the conversation so far prepended, so a
+  Customer Support Assistant or coaching agent can actually hold a
+  back-and-forth instead of treating every message as a fresh one-shot.
+  Personal per-user, like chat history, even on a flow the whole team shares
+  (`app/conversation_routes.py`, `flow_engine.run_flow`'s `history` param)
+- **Web search** — a Web search node backed by Tavily (a free-tier search
+  API built for feeding LLMs), for anything that needs current information a
+  static knowledge base can't provide - a Research Assistant, a restaurant
+  recommendation agent (`app/web_search_client.py`)
+- **One-off document input** — `POST /api/extract-text` pulls the text out
+  of an uploaded PDF/DOCX/CSV/TXT/MD without creating a permanent searchable
+  Knowledge base entry, for something like "summarize this transcript" where
+  you don't want it indexed forever - wired into Chat's attach button
+- **Templates** — a library of pre-built flows (`app/templates.py`) someone
+  can clone into their own flow in one click, including nine ready to go for
+  common agent use cases (customer support, product recommendations, meeting
+  summaries, HR policy Q&A, research, technical support, tutoring, restaurant
+  recommendations, productivity coaching)
 - **Schedules** — a flow doesn't have to wait for someone to click Run; an
   admin-less background scheduler (`app/scheduler.py`, APScheduler under the
   hood) can run it every N minutes or once a day, with a history of what
@@ -74,6 +90,12 @@ python3 tests/test_schedules_and_templates.py   # Templates -> a real scheduled 
 python3 tests/test_telegram.py   # Telegram: connect a bot -> link a chat -> send -> read
 python3 tests/test_google_settings.py   # Gmail/Drive credentials configured entirely via the Settings UI
 python3 tests/test_updater.py    # Self-update: swap in new code, prove a flow created beforehand survives
+python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
+python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
+python3 tests/test_user_deletion.py   # Admin removes a team member - their flows/KBs transfer, not vanish
+python3 tests/test_conversations.py   # Proves conversation memory by inspecting the actual LLM payload
+python3 tests/test_web_search_and_documents.py   # Web search node + one-off document text extraction
+python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean messages, not raw httpx text
 python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
 python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
 ```
@@ -167,6 +189,36 @@ No project or credentials to set up - each person creates their own bot:
    the bot's most recent message to find which chat to talk back to.
 
 A Telegram node can then send or read messages from that same chat.
+
+### Setting up web search
+
+Settings → Web search: paste in a Tavily API key. Free tier, no credit card,
+at [tavily.com](https://tavily.com) - a few thousand searches a month, which
+is generous for personal or small-team use. Hub-wide only, not a per-person
+setting like the LLM key - search results aren't billed per-account the same
+way LLM tokens are, so there's less reason for everyone to bring their own.
+
+### Conversations (memory)
+
+Every flow can be used two ways: **Run**, in the flow editor, is always a
+fresh one-shot - good for testing a flow while building it. **Chat**
+(the button next to Schedule) opens a real conversational interface:
+start a new conversation, and every message you send after the first
+carries the whole conversation with it - the flow's LLM node(s) see
+everything said so far, not just the latest message. This is what makes a
+template like Customer Support Assistant or Personal Productivity Coach
+actually usable instead of just able to answer one isolated question at a
+time.
+
+Conversations are personal - like chat history, not a shared team log, even
+for a flow the whole team can see and run. Each person's conversations with
+a given flow are their own list in the Chat sidebar.
+
+The attach button (📎) in Chat pulls text out of an uploaded PDF/DOCX/CSV/
+TXT/MD file and drops it into the message box - useful for something like
+Meeting Summarizer where you want to hand over a whole transcript without
+first building a permanent searchable knowledge base for a document you'll
+only ever use once.
 
 ## Self-updates
 
@@ -267,6 +319,21 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Conversation memory is a parameter, not a fork.** `flow_engine.run_flow`
+  takes an optional `history` list; a plain Run never passes one (unchanged,
+  one-shot behavior), while `conversation_routes.py`'s send-message endpoint
+  loads prior turns and passes them through. Every LLM node in the flow gets
+  the same history prepended - there's no separate "conversational flow"
+  concept or duplicated execution path, just one flow engine that behaves
+  differently based on whether it was handed something to remember.
+- **Deleting a user reassigns their data instead of cascading the delete.**
+  `db.reassign_user_data` hands off owned flows, knowledge bases, uploaded
+  documents, and schedules to whichever admin performed the deletion, before
+  the account itself is removed - a private flow doesn't just vanish, and a
+  shared one doesn't orphan a foreign key. Personal connections (Gmail,
+  Drive, Telegram) are the one exception: those are deleted outright, since
+  handing someone else's OAuth token to the admin would be nonsensical, not
+  a courtesy.
 - **Sessions are opaque random tokens in a database table, not JWTs.**
   Revoking one (logout, password change, admin reset) is a `DELETE`, not a
   denylist you have to maintain alongside a stateless token scheme - simpler
@@ -383,4 +450,11 @@ node, not just a final answer.
   (LLM decides which tools to call, vs. the deterministic wiring flows use today)
 - A GitHub token option for the updater (private repos, and GitHub's 60/hour
   unauthenticated rate limit)
+- Conversation history has no summarization/compaction - it's capped at the
+  last `MAX_HISTORY_MESSAGES` (40) turns, so a very long-running conversation
+  eventually starts dropping its earliest messages rather than summarizing them
+- No per-user web search key (unlike the LLM key) - hub-wide only for now
+- No editing a document already extracted into a chat message - if the
+  extracted text needs a correction, remove it from the message box and
+  re-attach
 - An update history/changelog view beyond the single `app.bak` rollback slot

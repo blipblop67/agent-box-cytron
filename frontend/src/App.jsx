@@ -4,6 +4,7 @@ import LoginGate from './components/LoginGate'
 import AppShell from './components/layout/AppShell'
 import FlowsPage from './pages/FlowsPage'
 import FlowEditorPage from './pages/FlowEditorPage'
+import ChatPage from './pages/ChatPage'
 import KnowledgeBasesPage from './pages/KnowledgeBasesPage'
 import ConnectionsPage from './pages/ConnectionsPage'
 import TeamPage from './pages/TeamPage'
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/flows" replace />} />
         <Route path="/flows" element={<FlowsPage />} />
         <Route path="/flows/:flowId" element={<FlowEditorPage />} />
+        <Route path="/flows/:flowId/chat" element={<ChatPage />} />
         <Route path="/knowledge-bases" element={<KnowledgeBasesPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/team" element={<TeamPage />} />

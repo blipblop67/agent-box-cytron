@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper } from 'lucide-react'
+import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper, Globe } from 'lucide-react'
 import { api } from '../lib/api'
 import { Field, TextInput, Select } from '../components/common/FormField'
 import Button from '../components/common/Button'
@@ -36,6 +36,7 @@ export default function SettingsPage() {
 
       <LlmSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <GoogleSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <UpdatesCard isAdmin={isAdmin} />
     </div>
   )
@@ -192,6 +193,63 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
       {isAdmin && (
         <div className="flex items-center gap-3 pt-1">
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          {saved && <span className="text-xs text-signal">Saved</span>}
+        </div>
+      )}
+    </form>
+  )
+}
+
+function WebSearchSettingsCard({ settings, setSettings, isAdmin }) {
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      setSettings(await api.put('/settings', { web_search_api_key: apiKey }))
+      setApiKey('')
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <Globe size={15} className="text-copper" />
+        <div>
+          <h2 className="text-sm font-semibold text-ink">Web search</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Powers the "Web search" node - for a Research Assistant, Restaurant Recommendation
+            agent, or anything that needs current information rather than what a model already
+            knows. Get a free key (no card needed) at{' '}
+            <a href="https://tavily.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+              tavily.com <ExternalLink size={10} className="inline" />
+            </a>.
+          </p>
+        </div>
+      </div>
+
+      <Field label="Tavily API key" hint={settings.web_search_key_configured ? undefined : 'No key configured yet'}>
+        <div className="flex items-center gap-2">
+          <TextInput
+            disabled={!isAdmin}
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={settings.web_search_key_configured ? '••••••••••••  (leave blank to keep current key)' : 'tvly-...'}
+          />
+          {settings.web_search_key_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+        </div>
+      </Field>
+
+      {isAdmin && (
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="primary" disabled={!apiKey || saving}>{saving ? 'Saving…' : 'Save'}</Button>
           {saved && <span className="text-xs text-signal">Saved</span>}
         </div>
       )}

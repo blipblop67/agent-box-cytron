@@ -8,7 +8,8 @@ This is the "flow node" path described in the hub's design notes: deterministic
 and inspectable one node at a time, so the trace this returns can show someone
 learning the system exactly what happened at each step, not just a final answer.
 """
-from . import calculator, db, drive_client, gmail_client, llm_provider, telegram_client, telegram_tokens, vector_store
+from . import calculator, db, drive_client, gmail_client, hub_settings, llm_provider, telegram_client, \
+    telegram_tokens, vector_store, web_search_client
 from .embeddings import get_embedding_provider
 
 
@@ -45,7 +46,12 @@ def _topological_order(nodes: list[dict], edges: list[dict]) -> list[str]:
     return order
 
 
-def run_flow(graph: dict, run_input: str, user_id: str) -> dict:
+def run_flow(graph: dict, run_input: str, user_id: str, history: list[dict] | None = None) -> dict:
+    """`history`, when given, is prior turns of a conversation
+    ([{"role": "user"|"assistant", "content": ...}, ...]) - every LLM node in
+    the flow gets it prepended to its own messages, so a flow run through a
+    Conversation (see conversation_routes.py) remembers earlier turns instead
+    of treating each message as a one-off, the way a plain Run does."""
     nodes = {n["id"]: n for n in graph.get("nodes", [])}
     edges = graph.get("edges", [])
     if not nodes:
@@ -70,7 +76,7 @@ def run_flow(graph: dict, run_input: str, user_id: str) -> dict:
         node_input = "\n\n".join(outputs[p] for p in predecessor_ids if p in outputs)
 
         try:
-            output = _execute_node(node_type, data, node_input, run_input, user_id)
+            output = _execute_node(node_type, data, node_input, run_input, user_id, history)
         except Exception as exc:  # noqa: BLE001 - surface any tool/LLM failure into the trace
             trace.append({"node_id": node_id, "type": node_type, "input": node_input,
                           "output": None, "error": str(exc)})
@@ -86,7 +92,8 @@ def run_flow(graph: dict, run_input: str, user_id: str) -> dict:
     return {"output": final_output, "trace": trace}
 
 
-def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, user_id: str) -> str:
+def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, user_id: str,
+                   history: list[dict] | None = None) -> str:
     if node_type == "input":
         return run_input
 
@@ -94,10 +101,15 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
         messages = []
         if data.get("system_prompt"):
             messages.append({"role": "system", "content": data["system_prompt"]})
+        if history:
+            messages.extend(history)
         messages.append({"role": "user", "content": node_input or run_input})
         return llm_provider.chat_completion(
             messages, model=data.get("model") or None, provider=data.get("provider") or None, user_id=user_id,
         )
+
+    if node_type == "web_search":
+        return _execute_web_search_node(data, node_input, run_input)
 
     if node_type == "knowledge_base":
         kb_id = data.get("kb_id")
@@ -193,3 +205,16 @@ def _execute_telegram_node(data: dict, node_input: str, run_input: str, user_id:
             return "(no recent messages)"
         return "\n".join(f"{m['from']}: {m['text']}" for m in messages)
     raise ValueError(f"Unknown telegram action '{action}'")
+
+
+def _execute_web_search_node(data: dict, node_input: str, run_input: str) -> str:
+    api_key = hub_settings.get_web_search_api_key()
+    if not api_key:
+        raise ValueError("Web search isn't configured yet - add a Tavily API key on the Settings page")
+    query = data.get("query") or node_input or run_input
+    if not query:
+        raise ValueError("This Web search node has nothing to search for")
+    results = web_search_client.search(api_key, query, max_results=data.get("max_results") or 5)
+    if not results:
+        return "(no results found)"
+    return "\n\n".join(f"[{r['title']}]({r['url']})\n{r['content']}" for r in results)

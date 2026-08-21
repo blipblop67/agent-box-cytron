@@ -48,7 +48,7 @@ def main():
 
     # --- templates ---
     templates = client.get("/api/templates", headers=headers).json()
-    assert len(templates) == 6, templates
+    assert len(templates) == 15, templates
     assert {t["id"] for t in templates} >= {"first-agent", "ask-your-documents", "quick-calculator", "notify-me-on-telegram"}
     print(f"[ok] {len(templates)} templates available")
 

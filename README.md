@@ -49,11 +49,21 @@ needed) alongside Gmail and Drive, a self-update feature (Settings →
 Software updates: point at a GitHub repo you control, check, and apply -
 all from the browser, with user data structurally outside anything an
 update touches), real password authentication (bcrypt, server-side
-sessions, admin password reset - not the name-only stub earlier versions of
-this project used), and per-person credentials (anyone can set their own
-Google OAuth app or OpenRouter key on the Account page, which take priority
-over the hub-wide defaults for that person only). Known gaps are listed at
-the bottom of `backend/README.md` and `frontend/README.md` - mainly: no
-email-based "forgot password" flow (admin reset is the recovery path),
-no event-based/webhook trigger (only time-based schedules), and flows are
-DAGs without branching logic yet.
+sessions, admin password reset and removal - not the name-only stub earlier
+versions of this project used), per-person credentials (anyone can set
+their own Google OAuth app or OpenRouter key on the Account page, which
+take priority over the hub-wide defaults for that person only), and three
+capabilities added specifically to close the gap between "can build a flow"
+and "can build the kind of assistant people actually ask for": conversation
+memory (Chat, not just Run - a flow remembers earlier turns), a web search
+node (Tavily-backed, for anything needing current information), and one-off
+document input (attach a file to a chat message without building a
+permanent knowledge base for it). Nine ready-to-use templates - customer
+support, product recommendations, meeting summaries, HR policy Q&A,
+research, technical support, tutoring, restaurant recommendations, and
+productivity coaching - put these together as concrete starting points.
+Known gaps are listed at the bottom of `backend/README.md` and
+`frontend/README.md` - mainly: no email-based "forgot password" flow (admin
+reset is the recovery path), no event-based/webhook trigger (only
+time-based schedules), conversation history is capped rather than
+summarized, and flows are DAGs without branching logic yet.

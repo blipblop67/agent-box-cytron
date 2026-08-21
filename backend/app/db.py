@@ -118,6 +118,26 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
     trace_json TEXT,
     FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    flow_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,             -- conversations are personal, not shared - like chat history
+    title TEXT NOT NULL DEFAULT 'New conversation',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    FOREIGN KEY (flow_id) REFERENCES flows(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL,                -- 'user' | 'assistant'
+    content TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
 """
 
 
@@ -192,6 +212,29 @@ def list_users() -> list[sqlite3.Row]:
 def get_user(user_id: str) -> sqlite3.Row | None:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def reassign_user_data(old_user_id: str, new_user_id: str) -> None:
+    """Called right before deleting a user: hands off everything they owned
+    or created to `new_user_id` (the admin performing the deletion), so
+    shared team resources - and anything the schema requires a valid owner
+    for - survive the deletion intact rather than hitting a foreign key
+    error or vanishing with the account."""
+    with get_conn() as conn:
+        conn.execute("UPDATE flows SET owner_id = ? WHERE owner_id = ?", (new_user_id, old_user_id))
+        conn.execute("UPDATE knowledge_bases SET owner_id = ? WHERE owner_id = ?", (new_user_id, old_user_id))
+        conn.execute("UPDATE documents SET uploaded_by = ? WHERE uploaded_by = ?", (new_user_id, old_user_id))
+        conn.execute("UPDATE schedules SET created_by = ? WHERE created_by = ?", (new_user_id, old_user_id))
+
+
+def delete_user(user_id: str) -> None:
+    with get_conn() as conn:
+        # personal connections die with the account - handing someone else's
+        # Gmail/Drive/Telegram token to the admin would be nonsensical, unlike
+        # flows/knowledge bases which make sense to keep alive for the team
+        conn.execute("DELETE FROM oauth_credentials WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        # sessions and user_settings cascade automatically (ON DELETE CASCADE)
 
 
 # ---- sessions ------------------------------------------------------------------
@@ -499,4 +542,65 @@ def list_schedule_runs(schedule_id: str, limit: int = 20) -> list[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM schedule_runs WHERE schedule_id = ? ORDER BY started_at DESC LIMIT ?",
             (schedule_id, limit),
+        ).fetchall()
+
+
+# ---- conversations (chat-style memory for a flow) -------------------------------
+
+def create_conversation(flow_id: str, user_id: str, title: str) -> str:
+    conversation_id = new_id()
+    now = time.time()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO conversations (id, flow_id, user_id, title, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (conversation_id, flow_id, user_id, title, now, now),
+        )
+    return conversation_id
+
+
+def get_conversation(conversation_id: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+
+
+def list_conversations(flow_id: str, user_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM conversations WHERE flow_id = ? AND user_id = ? ORDER BY updated_at DESC",
+            (flow_id, user_id),
+        ).fetchall()
+
+
+def touch_conversation(conversation_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (time.time(), conversation_id))
+
+
+def rename_conversation(conversation_id: str, title: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (title, conversation_id))
+
+
+def delete_conversation(conversation_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
+
+def add_conversation_message(conversation_id: str, role: str, content: str) -> str:
+    message_id = new_id()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO conversation_messages (id, conversation_id, role, content, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (message_id, conversation_id, role, content, time.time()),
+        )
+    return message_id
+
+
+def list_conversation_messages(conversation_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at",
+            (conversation_id,),
         ).fetchall()

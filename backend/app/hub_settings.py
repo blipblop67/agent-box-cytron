@@ -1,8 +1,9 @@
 """
 Hub-wide settings an admin sets once from the Settings page, instead of
-editing config files: the LLM provider, and Google OAuth app credentials for
-Gmail/Drive. Secrets (OpenRouter key, Google client secret) are encrypted at
-rest with the same vault used for OAuth tokens.
+editing config files: the LLM provider, Google OAuth app credentials for
+Gmail/Drive, and a web search API key. Secrets (OpenRouter key, Google
+client secret, Tavily key) are encrypted at rest with the same vault used
+for OAuth tokens.
 
 Google's redirect URIs are deliberately *not* a setting here - they're
 derived from the request that hits /auth/start (see gmail_routes.py /
@@ -36,13 +37,14 @@ def get_settings() -> dict:
     settings["google_client_secret_configured"] = (
         db.get_setting("google_client_secret_encrypted") is not None or bool(config.GOOGLE_CLIENT_SECRET)
     )
+    settings["web_search_key_configured"] = db.get_setting("web_search_api_key_encrypted") is not None
     return settings
 
 
 def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str | None = None,
                      openrouter_model: str | None = None, ollama_base_url: str | None = None,
                      ollama_model: str | None = None, google_client_id: str | None = None,
-                     google_client_secret: str | None = None) -> None:
+                     google_client_secret: str | None = None, web_search_api_key: str | None = None) -> None:
     if llm_provider is not None:
         db.set_setting("llm_provider", llm_provider)
     if openrouter_model is not None:
@@ -57,6 +59,8 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
         db.set_setting("google_client_id", google_client_id)
     if google_client_secret:  # only overwrite if a new one was actually provided
         db.set_setting("google_client_secret_encrypted", crypto_vault.encrypt(google_client_secret).decode())
+    if web_search_api_key:  # only overwrite if a new one was actually provided
+        db.set_setting("web_search_api_key_encrypted", crypto_vault.encrypt(web_search_api_key).decode())
 
 
 def get_openrouter_api_key() -> str | None:
@@ -75,3 +79,10 @@ def get_google_client_secret() -> str:
     if stored:
         return crypto_vault.decrypt(stored.encode())
     return config.GOOGLE_CLIENT_SECRET or ""
+
+
+def get_web_search_api_key() -> str | None:
+    stored = db.get_setting("web_search_api_key_encrypted")
+    if stored is None:
+        return None
+    return crypto_vault.decrypt(stored.encode())
