@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Mail, HardDrive, Send, CircleCheck, Unplug, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
+import { Mail, HardDrive, CalendarDays, Send, CircleCheck, Unplug, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import Button from '../components/common/Button'
@@ -11,6 +11,7 @@ import { useUserStore } from '../state/userStore'
 const GOOGLE_SERVICES = [
   { key: 'email', label: 'Gmail', icon: Mail, description: 'Send, search, and reply to email through your own Gmail account.' },
   { key: 'drive', label: 'Google Drive', icon: HardDrive, description: 'List, read, and create files in your own Drive.' },
+  { key: 'calendar', label: 'Google Calendar', icon: CalendarDays, description: 'List upcoming events and create new ones on your own calendar.' },
 ]
 
 export default function ConnectionsPage() {
@@ -18,8 +19,10 @@ export default function ConnectionsPage() {
   const [error, setError] = useState(null)
 
   async function refresh() {
-    const [email, drive] = await Promise.all([api.get('/email/status'), api.get('/drive/status')])
-    setStatus({ email, drive })
+    const [email, drive, calendar] = await Promise.all([
+      api.get('/email/status'), api.get('/drive/status'), api.get('/calendar/status'),
+    ])
+    setStatus({ email, drive, calendar })
   }
 
   useEffect(() => {

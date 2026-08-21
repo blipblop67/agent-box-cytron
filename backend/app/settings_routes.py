@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from . import gmail_routes, drive_routes, google_oauth, hub_settings
+from . import gmail_routes, drive_routes, calendar_routes, google_oauth, hub_settings
 from .auth import get_current_user
 from .models import SettingsOut, SettingsUpdate
 
@@ -11,6 +11,7 @@ def _settings_out(request: Request) -> dict:
     settings = hub_settings.get_settings()
     settings["google_email_redirect_uri"] = google_oauth.redirect_uri_for(request, gmail_routes.CALLBACK_PATH)
     settings["google_drive_redirect_uri"] = google_oauth.redirect_uri_for(request, drive_routes.CALLBACK_PATH)
+    settings["google_calendar_redirect_uri"] = google_oauth.redirect_uri_for(request, calendar_routes.CALLBACK_PATH)
     return settings
 
 

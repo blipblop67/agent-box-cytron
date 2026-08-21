@@ -24,6 +24,9 @@ function subtitleFor(type, data, knowledgeBases, telegramBots) {
       if (data.action === 'read') return data.file_name || (data.file_id ? 'Read a file' : 'Read - no file selected')
       if (data.action === 'create') return data.name ? `Create "${data.name}"` : 'Create a new file'
       return data.search ? `List "${data.search}"` : 'List files'
+    case 'calendar':
+      if (data.action === 'create') return data.summary ? `Create "${data.summary}"` : 'Create - no title yet'
+      return 'List upcoming events'
     case 'telegram': {
       const bot = telegramBots.find((b) => b.id === data.bot_id)
       const botLabel = bot ? bot.name : 'No bot selected'

@@ -324,22 +324,27 @@ TEMPLATES = [
     {
         "id": "personal-productivity-coach",
         "name": "Personal Productivity Coach",
-        "description": "An ongoing coach for goals and habits - remembers what you're working on from one check-in to the next. Use Chat, and keep coming back to the same conversation rather than starting a new one each time.",
+        "description": "An ongoing coach for goals and habits - remembers what you're working on from one check-in to the next, and pulls your upcoming calendar events as context for every message. Use Chat, and keep coming back to the same conversation rather than starting a new one each time. Connect Google Calendar on the Connections page for the calendar awareness to work.",
         "graph": {
             "nodes": [
                 {"id": "in", "type": "input", "position": _pos(0), "data": {}},
-                {"id": "llm", "type": "llm", "position": _pos(1), "data": {
+                {"id": "cal", "type": "calendar", "position": _pos(1), "data": {"action": "list", "max_results": 5}},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
                     "system_prompt": (
-                        "You are a supportive but direct productivity coach. Help set concrete, specific goals, "
-                        "follow up on ones mentioned earlier in the conversation, and push back gently on vague "
-                        "plans ('be more productive') until they're actionable."
+                        "You are a supportive but direct productivity coach. The context includes the "
+                        "person's next few calendar events - use it where relevant (e.g. noting an "
+                        "upcoming deadline or meeting) but don't force it into every reply. Help set "
+                        "concrete, specific goals, follow up on ones mentioned earlier in the "
+                        "conversation, and push back gently on vague plans ('be more productive') until "
+                        "they're actionable."
                     ),
                 }},
-                {"id": "out", "type": "output", "position": _pos(2), "data": {}},
+                {"id": "out", "type": "output", "position": _pos(3), "data": {}},
             ],
             "edges": [
-                {"id": "e1", "source": "in", "target": "llm"},
-                {"id": "e2", "source": "llm", "target": "out"},
+                {"id": "e1", "source": "in", "target": "cal"},
+                {"id": "e2", "source": "cal", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "out"},
             ],
         },
     },

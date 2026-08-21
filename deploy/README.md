@@ -81,19 +81,21 @@ http://agenthub.local:8811
 (swap `agenthub` for whatever hostname you chose). First person to open it
 becomes the hub's admin.
 
-## 5. Set up Gmail / Drive (optional)
+## 5. Set up Gmail / Drive / Calendar (optional)
 
-Only needed if you want Email/Drive nodes to work. Everything below happens
-on the **Settings page in the app** - no file to edit on the Pi. Two of the
-sub-steps are easy to miss and will make "Connect" fail with no obvious
-reason if skipped.
+Only needed if you want Email/Drive/Calendar nodes to work - each is an
+independent connection, so connect just the ones you need. Everything below
+happens on the **Settings page in the app** - no file to edit on the Pi.
+Two of the sub-steps are easy to miss and will make "Connect" fail with no
+obvious reason if skipped.
 
 In [Google Cloud Console](https://console.cloud.google.com):
 
 1. Create a project.
-2. **APIs & Services → Library** → enable both **Gmail API** and **Google
-   Drive API**. Skip this and connecting *looks* like it works but every
-   actual send/read call fails afterward.
+2. **APIs & Services → Library** → enable **Gmail API**, **Google Drive
+   API**, and **Google Calendar API** (enable all three even if you only
+   need one now - each is free). Skip this and connecting *looks* like it
+   works but every actual send/read/list call fails afterward.
 3. **APIs & Services → OAuth consent screen** → User Type "External" → fill
    in the required fields. While it's in **Testing** mode (the default),
    add every team member's Google account under **Test users** on that same
@@ -104,15 +106,15 @@ In [Google Cloud Console](https://console.cloud.google.com):
    you exactly what to paste into "Authorized redirect URIs" here.
 
 Now, on the hub's **Settings** page (admin only): paste in the Client ID and
-Client Secret from the OAuth client you just created, then copy the two
+Client Secret from the OAuth client you just created, then copy the three
 redirect URIs shown there into that still-open Google Cloud tab (a "Copy"
 button sits next to each) and save the OAuth client. Hit Save on the
 Settings page too - it takes effect immediately, no restart.
 
-Each team member then connects their own account from the Connections
-page - the first time, Google shows an "unverified app" warning, which is
-expected for a personal project; click **Advanced → Go to (app name)** to
-continue.
+Each team member then connects whichever accounts they want from the
+Connections page - the first time, Google shows an "unverified app"
+warning, which is expected for a personal project; click **Advanced → Go
+to (app name)** to continue.
 
 If a connection attempt fails, it now lands on a page explaining the likely
 cause instead of a bare error - start there.

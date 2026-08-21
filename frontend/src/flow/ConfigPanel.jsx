@@ -64,6 +64,7 @@ export default function ConfigPanel() {
         {node.type === 'web_search' && <WebSearchFields data={node.data} patch={patch} />}
         {node.type === 'email' && <EmailFields data={node.data} patch={patch} />}
         {node.type === 'drive' && <DriveFields data={node.data} patch={patch} />}
+        {node.type === 'calendar' && <CalendarFields data={node.data} patch={patch} />}
         {node.type === 'telegram' && <TelegramFields data={node.data} patch={patch} />}
         {node.type === 'calculator' && <CalculatorFields data={node.data} patch={patch} />}
       </div>
@@ -277,6 +278,58 @@ function DriveFields({ data, patch }) {
           </Field>
           <Field label="Content" hint="Leave blank to use the previous node's output">
             <TextArea rows={3} value={data.content || ''} onChange={(e) => patch({ content: e.target.value })} />
+          </Field>
+        </>
+      )}
+    </>
+  )
+}
+
+function CalendarFields({ data, patch }) {
+  const calendarConnected = useCatalogStore((s) => s.calendar?.connected)
+
+  return (
+    <>
+      {!calendarConnected && (
+        <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Calendar</Link>.
+        </p>
+      )}
+      <Field label="Action">
+        <Select value={data.action || 'list'} onChange={(e) => patch({ action: e.target.value })}>
+          <option value="list">List upcoming events</option>
+          <option value="create">Create an event</option>
+        </Select>
+      </Field>
+
+      {data.action === 'list' ? (
+        <Field label="Max events">
+          <TextInput type="number" min={1} max={50} value={data.max_results ?? 5} onChange={(e) => patch({ max_results: Number(e.target.value) })} />
+        </Field>
+      ) : (
+        <>
+          <Field label="Title">
+            <TextInput value={data.summary || ''} onChange={(e) => patch({ summary: e.target.value })} placeholder="Follow-up call" />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Start" hint="e.g. 2026-09-01T14:00:00">
+              <TextInput value={data.start || ''} onChange={(e) => patch({ start: e.target.value })} placeholder="2026-09-01T14:00:00" className="font-mono text-xs" />
+            </Field>
+            <Field label="End">
+              <TextInput value={data.end || ''} onChange={(e) => patch({ end: e.target.value })} placeholder="2026-09-01T14:30:00" className="font-mono text-xs" />
+            </Field>
+          </div>
+          <Field label="Timezone">
+            <TextInput value={data.timezone_name || 'UTC'} onChange={(e) => patch({ timezone_name: e.target.value })} placeholder="America/New_York" />
+          </Field>
+          <Field label="Location" hint="Optional">
+            <TextInput value={data.location || ''} onChange={(e) => patch({ location: e.target.value })} />
+          </Field>
+          <Field label="Attendees" hint="Optional, comma-separated emails">
+            <TextInput value={data.attendees || ''} onChange={(e) => patch({ attendees: e.target.value })} placeholder="alex@example.com, sam@example.com" />
+          </Field>
+          <Field label="Description" hint="Leave blank to use the previous node's output">
+            <TextArea rows={2} value={data.description || ''} onChange={(e) => patch({ description: e.target.value })} />
           </Field>
         </>
       )}

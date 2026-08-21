@@ -8,8 +8,8 @@ This is the "flow node" path described in the hub's design notes: deterministic
 and inspectable one node at a time, so the trace this returns can show someone
 learning the system exactly what happened at each step, not just a final answer.
 """
-from . import calculator, db, drive_client, gmail_client, hub_settings, llm_provider, telegram_client, \
-    telegram_tokens, vector_store, web_search_client
+from . import calculator, calendar_client, db, drive_client, gmail_client, hub_settings, llm_provider, \
+    telegram_client, telegram_tokens, vector_store, web_search_client
 from .embeddings import get_embedding_provider
 
 
@@ -103,7 +103,14 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
             messages.append({"role": "system", "content": data["system_prompt"]})
         if history:
             messages.extend(history)
-        messages.append({"role": "user", "content": node_input or run_input})
+        if node_input and run_input and node_input != run_input:
+            # a tool ran before this node (Knowledge base, Web search, Calendar, ...) -
+            # give the LLM both what that tool produced and what was actually asked,
+            # rather than only the tool's output with the original message silently lost
+            user_content = f"Context:\n{node_input}\n\nMessage: {run_input}"
+        else:
+            user_content = node_input or run_input
+        messages.append({"role": "user", "content": user_content})
         return llm_provider.chat_completion(
             messages, model=data.get("model") or None, provider=data.get("provider") or None, user_id=user_id,
         )
@@ -135,6 +142,9 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
 
     if node_type == "drive":
         return _execute_drive_node(data, node_input, run_input, user_id)
+
+    if node_type == "calendar":
+        return _execute_calendar_node(data, node_input, run_input, user_id)
 
     if node_type == "telegram":
         return _execute_telegram_node(data, node_input, run_input)
@@ -185,6 +195,37 @@ def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: st
                                            mime_type=data.get("mime_type") or "text/plain")
         return f"Created '{result['name']}' (id: {result['id']})"
     raise ValueError(f"Unknown drive action '{action}'")
+
+
+def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
+    action = data.get("action", "list")
+    if action == "list":
+        events = calendar_client.list_events(user_id, max_results=data.get("max_results") or 10)
+        if not events:
+            return "(no upcoming events found)"
+        lines = []
+        for e in events:
+            line = f"{e['summary']} - {e['start']}"
+            if e.get("location"):
+                line += f" @ {e['location']}"
+            lines.append(line)
+        return "\n".join(lines)
+    if action == "create":
+        summary = data.get("summary")
+        start = data.get("start")
+        end = data.get("end")
+        if not summary or not start or not end:
+            raise ValueError("This Calendar node needs a title, start time, and end time configured")
+        description = data.get("description") or node_input or run_input
+        attendees_raw = data.get("attendees") or ""
+        attendees = [a.strip() for a in attendees_raw.split(",") if a.strip()] or None
+        result = calendar_client.create_event(
+            user_id, summary=summary, start=start, end=end,
+            description=description, location=data.get("location") or "",
+            timezone_name=data.get("timezone_name") or "UTC", attendees=attendees,
+        )
+        return f"Created '{result['summary']}' ({result['start']} - {result['end']})"
+    raise ValueError(f"Unknown calendar action '{action}'")
 
 
 def _execute_telegram_node(data: dict, node_input: str, run_input: str) -> str:

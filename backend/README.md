@@ -50,6 +50,10 @@ Drive tool integrations. Pairs with the React frontend in
   search, and reply from an Email node
 - **Drive** — same per-person connection, same personal-app option; list,
   read (including native Docs/Sheets/Slides), and create files from a Drive node
+- **Calendar** — same per-person connection again (Google Calendar
+  specifically); list upcoming events or create new ones from a Calendar
+  node. The Personal Productivity Coach template uses this to pull your
+  next few events as context for every check-in
 - **Telegram** — named bots (shared or private, same model as knowledge
   bases), not one connection per person: create as many as you want (just a
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
@@ -105,6 +109,8 @@ python3 tests/test_web_search_and_documents.py   # Web search node + one-off doc
 python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean messages, not raw httpx text
 python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
+python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
+python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
 python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
 ```
@@ -146,7 +152,7 @@ On first real request with `EMBEDDING_PROVIDER=local`, `fastembed` downloads
 the small model (~130MB for `bge-small`) and caches it — needs internet once,
 then works fully offline.
 
-### Setting up Gmail + Drive (one-time, per deployment)
+### Setting up Gmail + Drive + Calendar (one-time, per deployment)
 
 All of this happens from the **Settings** page in the app now - no config
 file to open. Four steps, not two - the first and last are easy to miss and
@@ -155,7 +161,9 @@ are the most common reason connecting fails:
 1. In [Google Cloud Console](https://console.cloud.google.com), create a
    project.
 2. **Enable the APIs**: APIs & Services → Library → search for and enable
-   both **Gmail API** and **Google Drive API**. Creating OAuth credentials
+   **Gmail API**, **Google Drive API**, and **Google Calendar API** (all
+   three, even if you only plan to use one right now - each is free to
+   enable and costs nothing to leave on). Creating OAuth credentials
    without this step lets someone connect, but every actual send/list/read
    call then fails.
 3. Configure the **OAuth consent screen**: User Type "External" (unless you
@@ -166,19 +174,21 @@ are the most common reason connecting fails:
    This is far and away the most common cause of "I click Connect and it
    just fails."
 4. Create **one** OAuth client ID (Credentials → Create Credentials → OAuth
-   client ID → type "Web application") — Gmail and Drive share it. The
-   Settings page shows the exact two redirect URIs to add here (they're
-   derived from however you're currently reaching the hub, so they're always
-   right - a "Copy" button sits next to each one).
+   client ID → type "Web application") — Gmail, Drive, and Calendar all
+   share it. The Settings page shows the exact three redirect URIs to add
+   here (they're derived from however you're currently reaching the hub, so
+   they're always right - a "Copy" button sits next to each one).
 5. Paste the client ID and secret into the Settings page and hit Save -
    takes effect immediately, no restart. (An admin who'd rather set these
    via `.env`/environment variables instead still can - see the
    configuration table above - but the Settings page always wins if both
    are set.)
-6. Each team member connects from the Connections page. The first time,
-   Google shows an "unverified app" warning - that's expected for a personal
-   project not submitted for Google's review; click **Advanced → Go to
-   (app name)** to proceed.
+6. Each team member connects whichever of the three they want from the
+   Connections page - Gmail, Drive, and Calendar are independent
+   connections, so someone can connect just Calendar without Gmail if
+   that's all they need. The first time, Google shows an "unverified app"
+   warning - that's expected for a personal project not submitted for
+   Google's review; click **Advanced → Go to (app name)** to proceed.
 
 If a connection attempt does fail, it now lands on a page explaining the
 likely cause (`app/oauth_errors.py`) instead of a bare error - that's the
@@ -345,6 +355,27 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Calendar is a third sibling of Gmail/Drive, not a variant.** Adding a
+  new Google product connection is almost entirely mechanical because the
+  OAuth machinery was already generic: `calendar_oauth.py` /
+  `calendar_tokens.py` / `calendar_client.py` / `calendar_routes.py` mirror
+  the Gmail files field-for-field, differing mainly in scopes
+  (`calendar.events`, read/write on events but not calendar settings) and
+  the API calls themselves. It's a genuinely separate OAuth connection from
+  Gmail/Drive, not an added scope on an existing one - someone who already
+  connected Gmail isn't silently granted Calendar access, and connecting
+  Calendar doesn't force a Gmail re-consent.
+- **A tool node's output augments the original message for the next LLM
+  node - it doesn't replace it.** Found while building the Calendar
+  template: chaining Knowledge base/Web search/Calendar into an LLM node
+  used to pass only the tool's output as the "user message," silently
+  dropping whatever was actually asked - a Calendar listing has no idea
+  what the person said, so the model would respond to five event titles
+  instead of the person's actual message. `_execute_node`'s "llm" branch
+  now builds `"Context:\n{tool_output}\n\nMessage: {original_message}"`
+  when both differ, and falls back to the old simple behavior for a plain
+  Input → LLM chain where there's nothing to combine
+  (`tests/test_llm_node_context.py`).
 - **API keys are hashed with SHA-256, not bcrypt.** Passwords need a slow,
   salted hash because people choose low-entropy secrets an attacker can
   guess offline; a generated `ahub_...` key is 256 bits of randomness with
