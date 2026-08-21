@@ -89,15 +89,17 @@ function PasswordCard() {
 
 function PersonalGoogleCard() {
   const [settings, setSettings] = useState(null)
+  const [hubConfigured, setHubConfigured] = useState(false)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   async function refresh() {
-    const s = await api.get('/account/settings')
+    const [s, hub] = await Promise.all([api.get('/account/settings'), api.get('/settings')])
     setSettings(s)
     setClientId(s.google_client_id)
+    setHubConfigured(hub.google_client_secret_configured)
   }
 
   useEffect(() => {
@@ -120,15 +122,24 @@ function PersonalGoogleCard() {
 
   if (!settings) return null
 
+  const usingPersonal = settings.google_client_secret_configured
+  const activeLabel = usingPersonal
+    ? 'Active: your personal Google app'
+    : hubConfigured
+      ? "Active: the hub's shared Google app"
+      : 'Nothing configured yet - Gmail/Drive connections will fail'
+
   return (
     <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
       <div>
-        <h2 className="text-sm font-semibold text-ink">Your own Google app</h2>
-        <p className="mt-0.5 text-xs text-ink-muted">
-          Optional - by default your Gmail/Drive connections use the hub's shared Google app (set on
-          the Settings page, if an admin has configured one). Fill this in if you'd rather use your
-          own instead, e.g. so you're not trusting the hub admin's OAuth app with your account.
-          Create one at{' '}
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Your own Google app</h2>
+          <Badge variant={usingPersonal ? 'signal' : hubConfigured ? 'neutral' : 'danger'}>{activeLabel}</Badge>
+        </div>
+        <p className="mt-1.5 text-xs text-ink-muted">
+          Optional. Leave blank and you'll keep using the hub-wide default above. Fill this in only
+          if you'd rather not trust the hub admin's OAuth app with your Google account - your own
+          app here takes over for you specifically, nobody else. Create one at{' '}
           <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
             console.cloud.google.com <ExternalLink size={10} className="inline" />
           </a>.
@@ -171,15 +182,17 @@ function PersonalGoogleCard() {
 
 function PersonalLlmCard() {
   const [settings, setSettings] = useState(null)
+  const [hub, setHub] = useState(null)
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   async function refresh() {
-    const s = await api.get('/account/settings')
+    const [s, hubSettings] = await Promise.all([api.get('/account/settings'), api.get('/settings')])
     setSettings(s)
     setModel(s.openrouter_model)
+    setHub(hubSettings)
   }
 
   useEffect(() => {
@@ -200,16 +213,32 @@ function PersonalLlmCard() {
     }
   }
 
-  if (!settings) return null
+  if (!settings || !hub) return null
+
+  const usingPersonal = settings.openrouter_key_configured
+  const hubIsOllama = hub.llm_provider === 'ollama'
+  const activeLabel = usingPersonal
+    ? 'Active: your personal key'
+    : hubIsOllama
+      ? "Hub default is Ollama, not OpenRouter"
+      : hub.openrouter_key_configured
+        ? "Active: the hub's shared key"
+        : 'Nothing configured yet - OpenRouter flows will fail'
 
   return (
     <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
       <div>
-        <h2 className="text-sm font-semibold text-ink">Your own OpenRouter key</h2>
-        <p className="mt-0.5 text-xs text-ink-muted">
-          Optional - by default flows use the hub's shared OpenRouter key. Set your own here if you'd
-          rather your usage bill to your own account. Used for any flow you personally run; other
-          people's runs of the same flow are unaffected.
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Your own OpenRouter key</h2>
+          <Badge variant={usingPersonal ? 'signal' : hubIsOllama || hub.openrouter_key_configured ? 'neutral' : 'danger'}>
+            {activeLabel}
+          </Badge>
+        </div>
+        <p className="mt-1.5 text-xs text-ink-muted">
+          Optional. Leave blank and you'll keep using the hub-wide default above. Fill this in if
+          you'd rather your usage bill to your own OpenRouter account instead - takes over for any
+          flow you personally run; other people's runs of the same flow are unaffected.
+          {hubIsOllama && " (The hub currently defaults to Ollama, so this only matters for a flow's LLM node explicitly set to OpenRouter.)"}
         </p>
       </div>
 

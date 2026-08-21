@@ -15,11 +15,16 @@ def _require_admin(user: dict):
 @router.get("/status", response_model=UpdateStatus)
 def status(user: dict = Depends(get_current_user)):
     config = updater.get_update_config()
-    if not config["repo"]:
+    try:
+        return UpdateStatus(**updater.check_for_update(), configured=True)
+    except updater.UpdateError as exc:
+        # a failed check (repo not public yet, network hiccup, rate limit) is
+        # something to show on the page, not a reason to break it entirely -
+        # this fires on every page load now that there's always a default repo
         return UpdateStatus(
-            repo="", branch=config["branch"], current_version=updater.get_installed_version(), configured=False,
+            repo=config["repo"], branch=config["branch"], current_version=updater.get_installed_version(),
+            configured=True, error=str(exc),
         )
-    return UpdateStatus(**updater.check_for_update(), configured=True)
 
 
 @router.put("/config", response_model=UpdateStatus)

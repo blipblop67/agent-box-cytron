@@ -47,10 +47,18 @@ class UpdateError(Exception):
 
 # ---- configuration (which repo/branch to track) --------------------------------
 
+# The reference deployment - defaults so a fresh hub is ready to check for
+# updates immediately, with nothing to type in. Still fully overridable from
+# Settings (e.g. to point at your own fork) - this only applies when nothing
+# has been explicitly configured yet.
+DEFAULT_UPDATE_REPO = "blipblop67/agent-box-cytron"
+DEFAULT_UPDATE_BRANCH = "main"
+
+
 def get_update_config() -> dict:
     return {
-        "repo": db.get_setting("update_repo") or "",
-        "branch": db.get_setting("update_branch") or "main",
+        "repo": db.get_setting("update_repo") or DEFAULT_UPDATE_REPO,
+        "branch": db.get_setting("update_branch") or DEFAULT_UPDATE_BRANCH,
     }
 
 
@@ -78,7 +86,12 @@ def check_for_update() -> dict:
         timeout=15,
     )
     if resp.status_code == 404:
-        raise UpdateError(f"Repository or branch not found: {config['repo']}@{config['branch']}")
+        raise UpdateError(
+            f"Couldn't find {config['repo']}@{config['branch']} on GitHub. Either the repo/branch "
+            f"name is wrong, or the repository is private - this check is an anonymous request, and "
+            f"GitHub returns this same 'not found' error for private repos as for ones that don't "
+            f"exist at all, so it can only see public repositories."
+        )
     resp.raise_for_status()
     data = resp.json()
 

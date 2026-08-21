@@ -239,6 +239,7 @@ class UpdateStatus(BaseModel):
     latest_message: str | None = None
     latest_date: str | None = None
     configured: bool
+    error: str | None = None
 
 
 class UpdateApplyResult(BaseModel):

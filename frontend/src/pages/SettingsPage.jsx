@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper } from 'lucide-react'
 import { api } from '../lib/api'
 import { Field, TextInput, Select } from '../components/common/FormField'
@@ -73,7 +74,12 @@ function LlmSettingsCard({ settings, setSettings, isAdmin }) {
     <form onSubmit={handleSave} className="mt-6 space-y-4 rounded-xl border border-line bg-surface p-5">
       <div>
         <h2 className="text-sm font-semibold text-ink">LLM provider</h2>
-        <p className="mt-0.5 text-xs text-ink-muted">Any flow's LLM node can override this, but most won't need to.</p>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          The <b>hub-wide default</b> - everyone uses this unless they've set up their own on their{' '}
+          <Link to="/account" className="text-copper hover:underline">Account page</Link>, which then wins
+          for just that person's flow runs. Set this once here for the whole team; people only need
+          their own if they want their usage billed to their own OpenRouter account.
+        </p>
       </div>
 
       <Field label="Provider">
@@ -147,7 +153,10 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
       <div>
         <h2 className="text-sm font-semibold text-ink">Google integration (Gmail + Drive)</h2>
         <p className="mt-0.5 text-xs text-ink-muted">
-          One OAuth client, shared by Gmail and Drive. Create it at{' '}
+          The <b>hub-wide default</b> Google app - everyone's Gmail/Drive connections use this
+          unless they've set up their own on their{' '}
+          <Link to="/account" className="text-copper hover:underline">Account page</Link> instead,
+          which then wins just for them. One OAuth client here covers the whole team; create it at{' '}
           <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
             console.cloud.google.com <ExternalLink size={10} className="inline" />
           </a>{' '}
@@ -192,6 +201,7 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
 
 function UpdatesCard({ isAdmin }) {
   const [status, setStatus] = useState(null)
+  const [editing, setEditing] = useState(false)
   const [repo, setRepo] = useState('')
   const [branch, setBranch] = useState('main')
   const [error, setError] = useState(null)
@@ -203,8 +213,8 @@ function UpdatesCard({ isAdmin }) {
   async function refresh() {
     const s = await api.get('/updates/status')
     setStatus(s)
-    if (s.repo) setRepo(s.repo)
-    if (s.branch) setBranch(s.branch)
+    setRepo(s.repo)
+    setBranch(s.branch)
   }
 
   useEffect(() => {
@@ -217,6 +227,7 @@ function UpdatesCard({ isAdmin }) {
     setError(null)
     try {
       setStatus(await api.put('/updates/config', { repo, branch }))
+      setEditing(false)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -286,30 +297,43 @@ function UpdatesCard({ isAdmin }) {
       <div>
         <h2 className="text-sm font-semibold text-ink">Software updates</h2>
         <p className="mt-0.5 text-xs text-ink-muted">
-          Points at a GitHub repo you control - not an arbitrary third party. Whatever's on that branch gets installed.
+          Points at a GitHub repo - defaults to this hub's own, but can point at your own fork
+          instead. Whatever's on that branch gets installed, and it must be <b>public</b>: this
+          check is an anonymous request, so a private repo looks identical to a missing one.
         </p>
       </div>
 
       {error && <p className="mt-3 rounded-md border border-danger/30 bg-danger-dim px-3 py-2 text-xs text-danger">{error}</p>}
+      {status.error && !error && (
+        <p className="mt-3 rounded-md border border-danger/30 bg-danger-dim px-3 py-2 text-xs text-danger">{status.error}</p>
+      )}
 
-      {!status.configured ? (
+      {editing && isAdmin ? (
         <form onSubmit={handleSaveConfig} className="mt-4 space-y-3">
-          <Field label="GitHub repository" hint="owner/repo, e.g. yourname/agent-hub">
-            <TextInput disabled={!isAdmin} value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="yourname/agent-hub" />
+          <Field label="GitHub repository" hint="owner/repo">
+            <TextInput value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="yourname/agent-hub" />
           </Field>
           <Field label="Branch">
-            <TextInput disabled={!isAdmin} value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" />
+            <TextInput value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" />
           </Field>
-          {isAdmin && (
-            <Button type="submit" variant="primary" disabled={!repo.trim() || savingConfig}>
+          <div className="flex gap-2">
+            <Button type="submit" variant="primary" size="sm" disabled={!repo.trim() || savingConfig}>
               {savingConfig ? 'Saving…' : 'Save'}
             </Button>
-          )}
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setRepo(status.repo); setBranch(status.branch) }}>
+              Cancel
+            </Button>
+          </div>
         </form>
       ) : (
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between text-xs text-ink-muted">
-            <span className="font-mono">{status.repo} · {status.branch}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="font-mono">{status.repo} · {status.branch}</span>
+              {isAdmin && (
+                <button onClick={() => setEditing(true)} className="text-copper hover:underline">change</button>
+              )}
+            </span>
             <span className="font-mono text-ink-faint">
               installed: {status.current_version ? status.current_version.slice(0, 7) : 'not tracked yet'}
             </span>
@@ -327,11 +351,11 @@ function UpdatesCard({ isAdmin }) {
                 </Button>
               )}
             </div>
-          ) : (
+          ) : !status.error ? (
             <div className="flex items-center gap-1.5 rounded-md border border-signal/30 bg-signal-dim px-3 py-2 text-xs text-signal">
               <PartyPopper size={13} /> You're on the latest version
             </div>
-          )}
+          ) : null}
 
           <div className="flex items-center gap-3">
             <Button variant="secondary" size="sm" onClick={handleCheck} disabled={checking || applying}>

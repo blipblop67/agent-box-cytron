@@ -170,12 +170,23 @@ A Telegram node can then send or read messages from that same chat.
 
 ## Self-updates
 
-Settings → Software updates: point the hub at a GitHub repo (`owner/repo`)
-and branch you control - typically your own fork or copy of this project.
-"Check for updates" compares the latest commit on that branch against what's
-installed; "Update now" downloads it, reinstalls Python dependencies,
-rebuilds the frontend, swaps the new code in, and restarts - a few minutes,
-entirely from the browser.
+Settings → Software updates: defaults to `blipblop67/agent-box-cytron`
+(main branch) with nothing to configure - every hub ships ready to check
+for updates against the reference repo. An admin can point it at a
+different repo/branch instead (the "change" link next to the repo name),
+typically their own fork. "Check for updates" compares the latest commit
+on that branch against what's installed; "Update now" downloads it,
+reinstalls Python dependencies, rebuilds the frontend, swaps the new code
+in, and restarts - a few minutes, entirely from the browser.
+
+**The repo has to be public.** The check is an anonymous GitHub API
+request - no token, nothing to configure - which means it can only see
+public repositories. A private repo returns the exact same 404 a
+nonexistent one would, so `check_for_update()` gives a specific error
+pointing at this ("...the repository is private...") rather than a bare
+"not found," and `/api/updates/status` surfaces that error on the page
+instead of failing to load at all (it checks on every page load now that
+there's always a default repo to check).
 
 **Why this is safe to leave data alone about**: `AGENT_HUB_DATA_DIR` (the
 SQLite database, uploaded documents, vector index) lives outside
@@ -271,7 +282,12 @@ node, not just a final answer.
   `user_settings.resolve_openrouter_credentials`) that every caller goes
   through - `google_oauth.py`'s functions take `client_id`/`client_secret`
   as plain arguments rather than looking anything up themselves, so there's
-  exactly one place that decides "personal, or fall back to hub-wide."
+  exactly one place that decides "personal, or fall back to hub-wide." The
+  Account page fetches both `/api/settings` (hub-wide, readable by anyone)
+  and `/api/account/settings` (personal) and computes the same "which one's
+  actually active" logic client-side, so the UI states what's in effect
+  right now rather than just listing two separate config forms and leaving
+  the relationship to be inferred.
 - **No LangChain/LlamaIndex, no google-api-python-client, no agent
   framework.** Chunking is ~30 readable lines (`app/chunking.py`), the flow
   engine is one file you can read top to bottom (`app/flow_engine.py`), and

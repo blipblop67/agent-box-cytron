@@ -111,17 +111,19 @@ def main():
     client = TestClient(app)
     headers = auth_headers(client, "Alex")  # first user -> admin
 
-    # --- before configuring a repo ---
-    status = client.get("/api/updates/status", headers=headers).json()
-    assert status["configured"] is False
-    print("[ok] no repo configured yet")
+    # --- before any admin configuration, the hub already defaults to its own repo ---
+    with patch("httpx.get", return_value=fake_commit_response("sha-default-000")):
+        status = client.get("/api/updates/status", headers=headers).json()
+    assert status["configured"] is True
+    assert status["repo"] == updater.DEFAULT_UPDATE_REPO
+    print(f"[ok] defaults to the hub's own repo with no admin setup needed: {status['repo']}")
 
     other_headers = auth_headers(client, "Sam")
     forbidden = client.put("/api/updates/config", headers=other_headers, json={"repo": "someone/else"})
     assert forbidden.status_code == 403
     print("[ok] only a hub admin can configure the update repo")
 
-    # --- configure a repo, check for an update ---
+    # --- an admin can still override it, e.g. to point at their own fork ---
     with patch("httpx.get", return_value=fake_commit_response("sha-latest-111")):
         configured = client.put(
             "/api/updates/config", headers=headers, json={"repo": "someuser/agent-hub", "branch": "main"},
@@ -129,6 +131,19 @@ def main():
     assert configured["update_available"] is True  # nothing installed yet -> anything counts as "available"
     assert configured["latest_version"] == "sha-latest-111"
     print("[ok] configured a repo and detected an available update")
+
+    # --- a repo that's unreachable (private, wrong name, etc.) doesn't break the status endpoint ---
+    def fake_404_get(url, **kwargs):
+        return FakeGetResponse({"message": "Not Found"}, status_code=404)
+    with patch("httpx.get", side_effect=fake_404_get):
+        broken_status = client.get("/api/updates/status", headers=headers).json()
+    assert broken_status["configured"] is True
+    assert broken_status["error"] is not None and "public" in broken_status["error"]
+    print("[ok] an unreachable/private repo shows a clear error instead of breaking the page")
+
+    # restore a working mock before continuing
+    with patch("httpx.get", return_value=fake_commit_response("sha-latest-111")):
+        client.get("/api/updates/status", headers=headers)
 
     # --- create a flow BEFORE updating, to prove it survives ---
     flow = client.post(
