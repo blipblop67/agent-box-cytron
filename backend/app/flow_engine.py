@@ -8,7 +8,7 @@ This is the "flow node" path described in the hub's design notes: deterministic
 and inspectable one node at a time, so the trace this returns can show someone
 learning the system exactly what happened at each step, not just a final answer.
 """
-from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, \
+from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, sheets_client, \
     telegram_client, telegram_tokens, user_settings, vector_store, web_search_client, youtube_client
 from .embeddings import get_embedding_provider
 
@@ -149,6 +149,9 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
     if node_type == "calendar":
         return _execute_calendar_node(data, node_input, run_input, user_id)
 
+    if node_type == "sheets":
+        return _execute_sheets_node(data, node_input, run_input, user_id)
+
     if node_type == "telegram":
         return _execute_telegram_node(data, node_input, run_input)
 
@@ -229,6 +232,56 @@ def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id:
         )
         return f"Created '{result['summary']}' ({result['start']} - {result['end']})"
     raise ValueError(f"Unknown calendar action '{action}'")
+
+
+def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
+    action = data.get("action", "upsert_row")
+
+    if action == "create":
+        title = data.get("title")
+        if not title:
+            raise ValueError("This Sheets node needs a title to create a spreadsheet")
+        headers = [h.strip() for h in (data.get("headers") or "").split(",") if h.strip()]
+        try:
+            result = sheets_client.create_spreadsheet(user_id, title, headers or None, data.get("sheet_name") or "Sheet1")
+        except sheets_client.SheetsError as exc:
+            raise ValueError(str(exc)) from exc
+        return f"Created spreadsheet '{title}' - id: {result['spreadsheet_id']} - {result['url']}"
+
+    spreadsheet_id = data.get("spreadsheet_id")
+    if not spreadsheet_id:
+        raise ValueError("This Sheets node has no spreadsheet ID configured")
+    sheet_name = data.get("sheet_name") or "Sheet1"
+
+    if action == "read":
+        try:
+            rows = sheets_client.read_rows(user_id, spreadsheet_id, sheet_name)
+        except sheets_client.SheetsError as exc:
+            raise ValueError(str(exc)) from exc
+        if not rows:
+            return "(spreadsheet is empty)"
+        return "\n".join(" | ".join(row) for row in rows)
+
+    if action in ("upsert_row", "append_row"):
+        raw = (node_input or run_input or "").strip()
+        if not raw or raw.upper() in ("NONE", "NO UPDATES", "N/A"):
+            return "(nothing to update)"
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        summaries = []
+        try:
+            for line in lines:
+                values = [v.strip() for v in line.split("|")]
+                if action == "upsert_row":
+                    result = sheets_client.upsert_row(user_id, spreadsheet_id, sheet_name, values)
+                    summaries.append(f"{result['action']} row {result['row']} for '{result['key']}'")
+                else:
+                    sheets_client.append_row(user_id, spreadsheet_id, sheet_name, values)
+                    summaries.append(f"appended: {' | '.join(values)}")
+        except sheets_client.SheetsError as exc:
+            raise ValueError(str(exc)) from exc
+        return "\n".join(summaries)
+
+    raise ValueError(f"Unknown sheets action '{action}'")
 
 
 def _execute_telegram_node(data: dict, node_input: str, run_input: str) -> str:

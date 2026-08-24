@@ -29,6 +29,10 @@ function subtitleFor(type, data, knowledgeBases, telegramBots) {
     case 'calendar':
       if (data.action === 'create') return data.summary ? `Create "${data.summary}"` : 'Create - no title yet'
       return 'List upcoming events'
+    case 'sheets':
+      if (data.action === 'create') return data.title ? `Create "${data.title}"` : 'Create - no title yet'
+      if (data.action === 'read') return data.spreadsheet_id ? `Read from ${data.sheet_name || 'Sheet1'}` : 'Read - no spreadsheet selected'
+      return data.spreadsheet_id ? `Update a row in ${data.sheet_name || 'Sheet1'}` : 'Update - no spreadsheet selected'
     case 'telegram': {
       const bot = telegramBots.find((b) => b.id === data.bot_id)
       const botLabel = bot ? bot.name : 'No bot selected'

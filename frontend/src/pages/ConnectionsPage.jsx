@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Mail, HardDrive, CalendarDays, Send, CircleCheck, Unplug, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
+import { Mail, HardDrive, CalendarDays, Table, Send, CircleCheck, Unplug, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import Button from '../components/common/Button'
@@ -12,6 +12,7 @@ const GOOGLE_SERVICES = [
   { key: 'email', label: 'Gmail', icon: Mail, description: 'Send, search, and reply to email through your own Gmail account.' },
   { key: 'drive', label: 'Google Drive', icon: HardDrive, description: 'List, read, and create files in your own Drive.' },
   { key: 'calendar', label: 'Google Calendar', icon: CalendarDays, description: 'List upcoming events and create new ones on your own calendar.' },
+  { key: 'sheets', label: 'Google Sheets', icon: Table, description: 'Create spreadsheets, and read or update rows in them.' },
 ]
 
 export default function ConnectionsPage() {
@@ -19,10 +20,10 @@ export default function ConnectionsPage() {
   const [error, setError] = useState(null)
 
   async function refresh() {
-    const [email, drive, calendar] = await Promise.all([
-      api.get('/email/status'), api.get('/drive/status'), api.get('/calendar/status'),
+    const [email, drive, calendar, sheets] = await Promise.all([
+      api.get('/email/status'), api.get('/drive/status'), api.get('/calendar/status'), api.get('/sheets/status'),
     ])
-    setStatus({ email, drive, calendar })
+    setStatus({ email, drive, calendar, sheets })
   }
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function ConnectionsPage() {
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-lg font-semibold text-ink">Connections</h1>
       <p className="mt-1 text-sm text-ink-muted">
-        Gmail, Drive, and Calendar connect to your own account - a tool node acts as whoever runs
+        Gmail, Drive, Calendar, and Sheets connect to your own account - a tool node acts as whoever runs
         the flow. Telegram bots below work differently: each one belongs to whichever flows you
         wire it into, regardless of who runs them - so different agents can message through
         different bots.

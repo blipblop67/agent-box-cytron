@@ -175,7 +175,7 @@ function PersonalGoogleCard() {
     ? 'Active: your personal Google app'
     : hubConfigured
       ? "Active: the hub's shared Google app"
-      : 'Nothing configured yet - Gmail/Drive/Calendar connections will fail'
+      : 'Nothing configured yet - Gmail/Drive/Calendar/Sheets connections will fail'
 
   return (
     <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
@@ -213,11 +213,12 @@ function PersonalGoogleCard() {
       {clientId && (
         <div className="space-y-2 rounded-md border border-line-strong bg-surface-raised p-3">
           <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-            Redirect URIs - add all three to your OAuth client
+            Redirect URIs - add all four to your OAuth client
           </p>
           <RedirectUriRow label="Gmail" value={settings.google_email_redirect_uri} />
           <RedirectUriRow label="Drive" value={settings.google_drive_redirect_uri} />
           <RedirectUriRow label="Calendar" value={settings.google_calendar_redirect_uri} />
+          <RedirectUriRow label="Sheets" value={settings.google_sheets_redirect_uri} />
         </div>
       )}
 

@@ -75,6 +75,16 @@ Drive tool integrations. Pairs with the React frontend in
   specifically); list upcoming events or create new ones from a Calendar
   node. The Personal Productivity Coach template uses this to pull your
   next few events as context for every check-in
+- **Sheets** — genuine spreadsheet editing, not just file overwrite: a
+  Sheets node can create a spreadsheet, read it, or upsert a row - find a
+  row by matching its first column against a key, update that row in
+  place, or append a new one if the key hasn't been seen before. This is
+  what makes a real progress tracker possible (the SIRIM CoC Progress
+  Tracker template is built on exactly this): the same application gets
+  its row updated as it moves through stages, not duplicated on every
+  check. A single run can update several rows at once (one per line of the
+  previous node's output), since one email check will often touch more
+  than one thing being tracked (`app/sheets_client.py`)
 - **Telegram** — named bots (shared or private, same model as knowledge
   bases), not one connection per person: create as many as you want (just a
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
@@ -144,6 +154,7 @@ python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection
 python3 tests/test_telegram_triggers.py   # Message a bot, get an auto-reply with real memory - zero /run calls
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
 python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
+python3 tests/test_sheets.py   # Sheets OAuth, and the upsert behavior a real progress tracker needs
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_reset_password_script.py   # The emergency CLI recovery tool, run as a real subprocess
@@ -187,7 +198,7 @@ On first real request with `EMBEDDING_PROVIDER=local`, `fastembed` downloads
 the small model (~130MB for `bge-small`) and caches it — needs internet once,
 then works fully offline.
 
-### Setting up Gmail + Drive + Calendar (one-time, per deployment)
+### Setting up Gmail + Drive + Calendar + Sheets (one-time, per deployment)
 
 All of this happens from the **Settings** page in the app now - no config
 file to open. Four steps, not two - the first and last are easy to miss and
@@ -196,11 +207,11 @@ are the most common reason connecting fails:
 1. In [Google Cloud Console](https://console.cloud.google.com), create a
    project.
 2. **Enable the APIs**: APIs & Services → Library → search for and enable
-   **Gmail API**, **Google Drive API**, and **Google Calendar API** (all
-   three, even if you only plan to use one right now - each is free to
-   enable and costs nothing to leave on). Creating OAuth credentials
-   without this step lets someone connect, but every actual send/list/read
-   call then fails.
+   **Gmail API**, **Google Drive API**, **Google Calendar API**, and
+   **Google Sheets API** (all four, even if you only plan to use one right
+   now - each is free to enable and costs nothing to leave on). Creating
+   OAuth credentials without this step lets someone connect, but every
+   actual send/list/read/update call then fails.
 3. Configure the **OAuth consent screen**: User Type "External" (unless you
    have Google Workspace), fill in the required fields. While it's in
    **Testing** mode (the default, and fine for a small team), Google will
@@ -209,18 +220,18 @@ are the most common reason connecting fails:
    This is far and away the most common cause of "I click Connect and it
    just fails."
 4. Create **one** OAuth client ID (Credentials → Create Credentials → OAuth
-   client ID → type "Web application") — Gmail, Drive, and Calendar all
-   share it. The Settings page shows the exact three redirect URIs to add
-   here (they're derived from however you're currently reaching the hub, so
-   they're always right - a "Copy" button sits next to each one).
+   client ID → type "Web application") — Gmail, Drive, Calendar, and Sheets
+   all share it. The Settings page shows the exact four redirect URIs to
+   add here (they're derived from however you're currently reaching the
+   hub, so they're always right - a "Copy" button sits next to each one).
 5. Paste the client ID and secret into the Settings page and hit Save -
    takes effect immediately, no restart. (An admin who'd rather set these
    via `.env`/environment variables instead still can - see the
    configuration table above - but the Settings page always wins if both
    are set.)
-6. Each team member connects whichever of the three they want from the
-   Connections page - Gmail, Drive, and Calendar are independent
-   connections, so someone can connect just Calendar without Gmail if
+6. Each team member connects whichever of the four they want from the
+   Connections page - Gmail, Drive, Calendar, and Sheets are independent
+   connections, so someone can connect just Sheets without Gmail if
    that's all they need. The first time, Google shows an "unverified app"
    warning - that's expected for a personal project not submitted for
    Google's review; click **Advanced → Go to (app name)** to proceed.
@@ -505,6 +516,34 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Sheets is a real API integration, not a bigger Drive node.** Drive
+  treats a file as an opaque blob - creating one works fine, but "editing"
+  it means regenerating the entire content and overwriting the whole
+  file, which doesn't scale for a spreadsheet that's meant to be updated
+  incrementally over time. `sheets_client.py` uses the actual Sheets API
+  (`spreadsheets.values.update`/`.append`) so `upsert_row` can touch just
+  one row - find it by matching the first column against a key, update it
+  in place, or append a new one if the key hasn't been seen before. A flow
+  passes one text string between nodes, so the handoff into a Sheets node
+  is a small, deliberate convention: one row per line, values separated by
+  `|`, first value is the key - simple enough for a system prompt to
+  produce reliably, and readable if you're staring at the trace trying to
+  see what happened. A single run updates as many rows as the previous
+  node's output has lines, since a realistic use case (checking email for
+  updates across several things being tracked) will often touch more than
+  one row per check - this wasn't the original design, it came from
+  actually building the SIRIM CoC Progress Tracker template and realizing
+  a single-row-per-run node would silently drop every application after
+  the first one mentioned in a given batch of emails.
+- **A Sheets node references a fixed spreadsheet ID, the same pattern a
+  Knowledge base node uses for `kb_id` or a Telegram node uses for
+  `bot_id`.** There's no "create if missing" magic - you create the
+  tracker once (temporarily switch the node to the "Create" action, run
+  it, copy the ID it returns), then point every subsequent node at that
+  same ID. Explicit over clever: the alternative (a flow that silently
+  creates a new spreadsheet on first run and somehow remembers it for
+  next time) would need to persist state outside the flow graph itself,
+  which nothing else in this system does.
 - **Web search and YouTube keys got the same personal-override treatment
   the LLM key and Google app already had**, rather than staying hub-wide
   only. The distinction that matters for "should this be per-person or
@@ -782,10 +821,21 @@ node, not just a final answer.
 - Conversation history has no summarization/compaction - it's capped at the
   last `MAX_HISTORY_MESSAGES` (40) turns, so a very long-running conversation
   eventually starts dropping its earliest messages rather than summarizing them
-- No per-user web search key (unlike the LLM key) - hub-wide only for now
 - No editing a document already extracted into a chat message - if the
   extracted text needs a correction, remove it from the message box and
   re-attach
+- No spreadsheet picker for the Sheets node - you paste in an ID by hand
+  (from the sheet's URL, or the output of a one-time "Create" run), the
+  same way a Telegram node's bot or a Knowledge base node's `kb_id` work,
+  rather than browsing a list. A Drive-style picker would be nicer but
+  needs its own "list spreadsheets I can see" endpoint this doesn't have yet
+- The Sheets node only writes plain values - no cell formatting,
+  conditional formatting (e.g. color-coding a Status column by value), or
+  formulas. Whatever the LLM's line becomes is exactly what lands in the
+  row, verbatim
+- Sheets row-matching is always column A - no configurable "match on this
+  other column instead" for a spreadsheet where the natural key isn't the
+  first one
 - An update history/changelog view beyond the single `app.bak` rollback slot
 - No rate limiting on the public flow API (`/api/public/flows/{id}/run`) -
   a published flow can be called as fast as the caller wants; fine for the

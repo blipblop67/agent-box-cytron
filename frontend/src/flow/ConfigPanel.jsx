@@ -66,6 +66,7 @@ export default function ConfigPanel() {
         {node.type === 'email' && <EmailFields data={node.data} patch={patch} />}
         {node.type === 'drive' && <DriveFields data={node.data} patch={patch} />}
         {node.type === 'calendar' && <CalendarFields data={node.data} patch={patch} />}
+        {node.type === 'sheets' && <SheetsFields data={node.data} patch={patch} />}
         {node.type === 'telegram' && <TelegramFields data={node.data} patch={patch} />}
         {node.type === 'calculator' && <CalculatorFields data={node.data} patch={patch} />}
       </div>
@@ -351,6 +352,59 @@ function CalendarFields({ data, patch }) {
           <Field label="Description" hint="Leave blank to use the previous node's output">
             <TextArea rows={2} value={data.description || ''} onChange={(e) => patch({ description: e.target.value })} />
           </Field>
+        </>
+      )}
+    </>
+  )
+}
+
+function SheetsFields({ data, patch }) {
+  const sheetsConnected = useCatalogStore((s) => s.sheets?.connected)
+
+  return (
+    <>
+      {!sheetsConnected && (
+        <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Sheets</Link>.
+        </p>
+      )}
+      <Field label="Action">
+        <Select value={data.action || 'upsert_row'} onChange={(e) => patch({ action: e.target.value })}>
+          <option value="upsert_row">Update a row (or add if new)</option>
+          <option value="append_row">Always add a new row</option>
+          <option value="read">Read all rows</option>
+          <option value="create">Create a new spreadsheet</option>
+        </Select>
+      </Field>
+
+      {data.action === 'create' ? (
+        <>
+          <Field label="Title">
+            <TextInput value={data.title || ''} onChange={(e) => patch({ title: e.target.value })} placeholder="SIRIM CoC Tracker" />
+          </Field>
+          <Field label="Column headers" hint="Comma-separated - first one is the key column used for updates">
+            <TextInput value={data.headers || ''} onChange={(e) => patch({ headers: e.target.value })} placeholder="Application ID, Status, Notes" />
+          </Field>
+          <Field label="Tab name">
+            <TextInput value={data.sheet_name || 'Sheet1'} onChange={(e) => patch({ sheet_name: e.target.value })} />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label="Spreadsheet ID" hint="From the sheet's URL, or the output of a 'Create' step run once">
+            <TextInput value={data.spreadsheet_id || ''} onChange={(e) => patch({ spreadsheet_id: e.target.value })} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" className="font-mono text-xs" />
+          </Field>
+          <Field label="Tab name">
+            <TextInput value={data.sheet_name || 'Sheet1'} onChange={(e) => patch({ sheet_name: e.target.value })} />
+          </Field>
+          {(data.action === 'upsert_row' || data.action === 'append_row') && (
+            <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+              Expects the previous node's output as one row per line, values separated by{' '}
+              <code className="text-ink">|</code> - e.g. "SIRIM-2026-001 | Testing in progress | Lab
+              report received". The first value on each line is the key an "Update a row" action
+              matches on, so several rows can update in a single run.
+            </p>
+          )}
         </>
       )}
     </>

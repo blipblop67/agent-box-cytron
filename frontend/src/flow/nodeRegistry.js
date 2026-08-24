@@ -1,4 +1,4 @@
-import { LogIn, LogOut, Sparkles, BookOpen, Mail, HardDrive, Calculator, Send, Globe, CalendarDays, Clapperboard } from 'lucide-react'
+import { LogIn, LogOut, Sparkles, BookOpen, Mail, HardDrive, Calculator, Send, Globe, CalendarDays, Clapperboard, Table } from 'lucide-react'
 
 // Every node type's display metadata in one place - the palette, the node
 // card, and the config panel all read from this rather than each hardcoding
@@ -11,13 +11,14 @@ export const NODE_REGISTRY = {
   youtube: { label: 'YouTube', icon: Clapperboard, category: 'tool', description: 'Search YouTube videos' },
   email: { label: 'Email', icon: Mail, category: 'tool', description: 'Send or search Gmail' },
   drive: { label: 'Drive', icon: HardDrive, category: 'tool', description: 'List, read, or create files' },
+  sheets: { label: 'Sheets', icon: Table, category: 'tool', description: 'Read, create, or update a spreadsheet' },
   calendar: { label: 'Calendar', icon: CalendarDays, category: 'tool', description: 'List or create calendar events' },
   telegram: { label: 'Telegram', icon: Send, category: 'tool', description: 'Send or read a Telegram chat' },
   calculator: { label: 'Calculator', icon: Calculator, category: 'tool', description: 'Evaluate a math expression' },
   output: { label: 'Output', icon: LogOut, category: 'io', description: 'The final result of the run' },
 }
 
-export const PALETTE_ORDER = ['input', 'llm', 'knowledge_base', 'web_search', 'youtube', 'email', 'drive', 'calendar', 'telegram', 'calculator', 'output']
+export const PALETTE_ORDER = ['input', 'llm', 'knowledge_base', 'web_search', 'youtube', 'email', 'drive', 'sheets', 'calendar', 'telegram', 'calculator', 'output']
 
 // Full literal class names (not built via string interpolation) so Tailwind's
 // scanner can find them - see FlowNode.jsx for how these get used.
@@ -35,6 +36,7 @@ export const NODE_DEFAULTS = {
   youtube: { query: '', max_results: 10 },
   email: { action: 'send', to: '', subject: '', body: '', query: '', max_results: 5 },
   drive: { action: 'list', search: '', file_id: '', file_name: '', name: '', content: '', mime_type: 'text/plain' },
+  sheets: { action: 'upsert_row', spreadsheet_id: '', sheet_name: 'Sheet1', title: '', headers: '' },
   calendar: { action: 'list', max_results: 5, summary: '', start: '', end: '', description: '', location: '', timezone_name: 'UTC', attendees: '' },
   telegram: { bot_id: '', action: 'send', message: '', max_results: 10 },
   calculator: { expression: '' },

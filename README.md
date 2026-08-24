@@ -105,9 +105,23 @@ real login with the new password. Also fixed a real bug in
 `deploy/windows-run.ps1`: it was binding to `127.0.0.1` (localhost-only),
 which would silently block every other device on the same Wi-Fi from
 reaching the hub - now binds to `0.0.0.0` and prints the LAN IP to use from
-another device on startup. Known gaps are listed at the bottom of
-`backend/README.md` and `frontend/README.md` - mainly: no email
-verification step when someone sets a recovery email (trusted at face
-value), Gmail/Drive still have no event-based trigger (only Telegram, and
-only time-based Schedules otherwise), conversation history is capped
-rather than summarized, and flows are DAGs without branching logic yet.
+another device on startup. Any team member (not just admins) can also
+check for and apply software updates now, and set their own personal Web
+search/YouTube keys the same way they already could for the LLM key.
+Most recently: a genuine Google Sheets integration, not just a bigger
+Drive node - a Sheets node can create a spreadsheet, read it, or upsert a
+row (find by a key in the first column, update that row in place, or
+append if it's new), which is what makes an actual progress tracker
+possible rather than only ever overwriting a whole file. The SIRIM CoC
+Progress Tracker template is built on this: reads certification-related
+emails, extracts what changed for each application, and keeps a
+spreadsheet current without duplicating rows - verified with a full
+realistic simulation (plausible SIRIM emails in, correct tracker rows out,
+a second run with only irrelevant email content correctly doing nothing).
+Known gaps are listed at the bottom of `backend/README.md` and
+`frontend/README.md` - mainly: no email verification step when someone
+sets a recovery email (trusted at face value), Gmail/Drive still have no
+event-based trigger (only Telegram, and only time-based Schedules
+otherwise), the Sheets node has no spreadsheet picker (paste an ID by
+hand) and writes plain values only (no formatting or formulas), and flows
+are DAGs without branching logic yet.

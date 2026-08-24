@@ -163,6 +163,7 @@ class SettingsOut(BaseModel):
     google_email_redirect_uri: str
     google_drive_redirect_uri: str
     google_calendar_redirect_uri: str
+    google_sheets_redirect_uri: str
     web_search_key_configured: bool
     youtube_key_configured: bool
     smtp_host: str
@@ -365,6 +366,7 @@ class PersonalSettingsOut(BaseModel):
     google_email_redirect_uri: str
     google_drive_redirect_uri: str
     google_calendar_redirect_uri: str
+    google_sheets_redirect_uri: str
     openrouter_model: str
     openrouter_key_configured: bool
     web_search_key_configured: bool

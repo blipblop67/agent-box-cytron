@@ -375,6 +375,61 @@ TEMPLATES = [
             ],
         },
     },
+    {
+        "id": "sirim-coc-progress-tracker",
+        "name": "SIRIM CoC Progress Tracker",
+        "description": (
+            "Reads certification-related emails, figures out what changed for each application, "
+            "and keeps a Google Sheet up to date - updating the existing row for an application it's "
+            "already tracking instead of adding a duplicate. One-time setup needed: run this once with "
+            "the Sheets node's action switched to \"Create a new spreadsheet\" (fill in a title and "
+            "headers like \"Application ID, Status, Notes\"), copy the spreadsheet ID it returns, then "
+            "switch the node back to \"Update a row\" and paste that ID in. After that, put this flow "
+            "on a Schedule (e.g. every few hours) for a tracker that keeps itself current. Needs Gmail "
+            "and Sheets connected on the Connections page - adjust the Email node's search query to "
+            "match how certification emails actually show up in your inbox."
+        ),
+        "graph": {
+            "nodes": [
+                {"id": "in", "type": "input", "position": _pos(0), "data": {}},
+                {"id": "email", "type": "email", "position": _pos(1), "data": {
+                    "action": "search",
+                    "query": "SIRIM OR \"CoC\" OR \"certificate of conformance\" OR \"certificate of conformity\"",
+                    "max_results": 15,
+                }},
+                {"id": "llm", "type": "llm", "position": _pos(2), "data": {
+                    "system_prompt": (
+                        "You track SIRIM CoC (Certificate of Conformance) certification applications "
+                        "from email updates. The context is a set of recent emails - some may not be "
+                        "about a certification at all, ignore those.\n\n"
+                        "For each email that IS about a CoC application, identify:\n"
+                        "- A key: the SIRIM reference/application number if the email states one, "
+                        "otherwise a short stable identifier from the product or company name - reuse "
+                        "the exact same identifier every time the same application comes up, so updates "
+                        "land on the same tracker row instead of creating a duplicate.\n"
+                        "- A status: a short phrase for where it stands right now (e.g. 'Application "
+                        "submitted', 'Documents requested', 'Testing in progress', 'Certificate issued', "
+                        "'Rejected - resubmission needed').\n"
+                        "- A short note: what happened, what's needed next, any deadline mentioned.\n\n"
+                        "Output ONLY the update lines, one per application, in exactly this format and "
+                        "nothing else - no headers, no commentary, no markdown:\n"
+                        "key | status | note\n\n"
+                        "If none of the emails are about a CoC application, output exactly: NONE"
+                    ),
+                }},
+                {"id": "sheets", "type": "sheets", "position": _pos(3), "data": {
+                    "action": "upsert_row", "spreadsheet_id": "", "sheet_name": "Sheet1",
+                }},
+                {"id": "out", "type": "output", "position": _pos(4), "data": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "in", "target": "email"},
+                {"id": "e2", "source": "email", "target": "llm"},
+                {"id": "e3", "source": "llm", "target": "sheets"},
+                {"id": "e4", "source": "sheets", "target": "out"},
+            ],
+        },
+    },
 ]
 
 _BY_ID = {t["id"]: t for t in TEMPLATES}

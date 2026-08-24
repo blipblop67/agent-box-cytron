@@ -155,7 +155,7 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
   return (
     <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
       <div>
-        <h2 className="text-sm font-semibold text-ink">Google integration (Gmail + Drive + Calendar)</h2>
+        <h2 className="text-sm font-semibold text-ink">Google integration (Gmail + Drive + Calendar + Sheets)</h2>
         <p className="mt-0.5 text-xs text-ink-muted">
           The <b>hub-wide default</b> Google app - everyone's Gmail/Drive/Calendar connections use
           this unless they've set up their own on their{' '}
@@ -164,7 +164,7 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
           <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
             console.cloud.google.com <ExternalLink size={10} className="inline" />
           </a>{' '}
-          - enable the Gmail, Drive, and Calendar APIs, add yourself as a test user, then paste the
+          - enable the Gmail, Drive, Calendar, and Sheets APIs, add yourself as a test user, then paste the
           client ID/secret below.
         </p>
       </div>
@@ -188,11 +188,12 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
 
       <div className="space-y-2 rounded-md border border-line-strong bg-surface-raised p-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-          Redirect URIs - add all three to the OAuth client above
+          Redirect URIs - add all four to the OAuth client above
         </p>
         <RedirectUriRow label="Gmail" value={settings.google_email_redirect_uri} />
         <RedirectUriRow label="Drive" value={settings.google_drive_redirect_uri} />
         <RedirectUriRow label="Calendar" value={settings.google_calendar_redirect_uri} />
+        <RedirectUriRow label="Sheets" value={settings.google_sheets_redirect_uri} />
       </div>
 
       {isAdmin && (

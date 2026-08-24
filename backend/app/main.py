@@ -12,6 +12,7 @@ from .auth_routes import router as auth_router
 from .gmail_routes import router as gmail_router
 from .drive_routes import router as drive_router
 from .calendar_routes import router as calendar_router
+from .sheets_routes import router as sheets_router
 from .flow_routes import router as flow_router
 from .settings_routes import router as settings_router
 from .schedule_routes import router as schedule_router
@@ -49,6 +50,7 @@ app.include_router(router, prefix="/api")
 app.include_router(gmail_router, prefix="/api")
 app.include_router(drive_router, prefix="/api")
 app.include_router(calendar_router, prefix="/api")
+app.include_router(sheets_router, prefix="/api")
 app.include_router(flow_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(schedule_router, prefix="/api")
