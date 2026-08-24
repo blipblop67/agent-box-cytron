@@ -31,7 +31,11 @@ Drive tool integrations. Pairs with the React frontend in
 - **Web search** — a Web search node backed by Tavily (a free-tier search
   API built for feeding LLMs), for anything that needs current information a
   static knowledge base can't provide - a Research Assistant, a restaurant
-  recommendation agent (`app/web_search_client.py`)
+  recommendation agent. Hub-wide key on Settings, or anyone can set their
+  own on the Account page - same personal-overrides-hub-wide pattern as the
+  LLM key and Google app, so a team member without admin rights isn't
+  stuck if nobody's configured one for the whole team
+  (`app/web_search_client.py`)
 - **YouTube search** — a YouTube node backed by the YouTube Data API v3
   (a plain API key, not a Google login - searching YouTube's public catalog
   isn't "acting as" anyone). Returns titles, channels, descriptions, and
@@ -39,7 +43,8 @@ Drive tool integrations. Pairs with the React frontend in
   covered on a topic before proposing something new. The YouTube Video
   Idea Generator template is built on exactly this: search a topic, then
   get concrete new video ideas based on the gaps in what's already out
-  there (`app/youtube_client.py`)
+  there. Same personal-key option as Web search above
+  (`app/youtube_client.py`)
 - **One-off document input** — `POST /api/extract-text` pulls the text out
   of an uploaded PDF/DOCX/CSV/TXT/MD without creating a permanent searchable
   Knowledge base entry, for something like "summarize this transcript" where
@@ -130,6 +135,7 @@ python3 tests/test_google_settings.py   # Gmail/Drive credentials configured ent
 python3 tests/test_updater.py    # Self-update: swap in new code, prove a flow created beforehand survives
 python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
 python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
+python3 tests/test_personal_search_keys.py   # A member with no admin rights uses Web search/YouTube via their own key
 python3 tests/test_user_deletion.py   # Admin removes a team member - their flows/KBs transfer, not vanish
 python3 tests/test_conversations.py   # Proves conversation memory by inspecting the actual LLM payload
 python3 tests/test_web_search_and_documents.py   # Web search node + one-off document text extraction
@@ -499,6 +505,19 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Web search and YouTube keys got the same personal-override treatment
+  the LLM key and Google app already had**, rather than staying hub-wide
+  only. The distinction that matters for "should this be per-person or
+  admin-only": a hub-wide *default* that anyone can supplement with their
+  own is fine to open up (worst case, someone spends their own Tavily/
+  YouTube quota); a *shared, team-affecting* setting like the SMTP
+  credentials or which GitHub repo the hub trusts is a different kind of
+  decision and stays admin-only. `user_settings.py`'s
+  `resolve_web_search_api_key`/`resolve_youtube_api_key` mirror
+  `resolve_openrouter_credentials` exactly - personal wins if set,
+  otherwise hub-wide, otherwise a clear error naming both places to fix it
+  (`flow_engine.py`'s node executors now take `user_id` for this, the same
+  way the LLM node already did).
 - **Checking/applying an update is open to the whole team; choosing which
   repo to trust isn't.** `update_routes.py` splits these on purpose: the
   repo/branch a hub pulls code from (`PUT /config`) stays admin-only,

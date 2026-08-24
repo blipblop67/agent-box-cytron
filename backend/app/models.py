@@ -367,6 +367,8 @@ class PersonalSettingsOut(BaseModel):
     google_calendar_redirect_uri: str
     openrouter_model: str
     openrouter_key_configured: bool
+    web_search_key_configured: bool
+    youtube_key_configured: bool
 
 
 class PersonalSettingsUpdate(BaseModel):
@@ -374,6 +376,8 @@ class PersonalSettingsUpdate(BaseModel):
     google_client_secret: str | None = None
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
+    web_search_api_key: str | None = None
+    youtube_api_key: str | None = None
 
 
 class ConversationCreate(BaseModel):

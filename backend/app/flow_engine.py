@@ -8,8 +8,8 @@ This is the "flow node" path described in the hub's design notes: deterministic
 and inspectable one node at a time, so the trace this returns can show someone
 learning the system exactly what happened at each step, not just a final answer.
 """
-from . import calculator, calendar_client, db, drive_client, gmail_client, hub_settings, llm_provider, \
-    telegram_client, telegram_tokens, vector_store, web_search_client, youtube_client
+from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, \
+    telegram_client, telegram_tokens, user_settings, vector_store, web_search_client, youtube_client
 from .embeddings import get_embedding_provider
 
 
@@ -116,10 +116,10 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
         )
 
     if node_type == "web_search":
-        return _execute_web_search_node(data, node_input, run_input)
+        return _execute_web_search_node(data, node_input, run_input, user_id)
 
     if node_type == "youtube":
-        return _execute_youtube_node(data, node_input, run_input)
+        return _execute_youtube_node(data, node_input, run_input, user_id)
 
     if node_type == "knowledge_base":
         kb_id = data.get("kb_id")
@@ -257,10 +257,13 @@ def _execute_telegram_node(data: dict, node_input: str, run_input: str) -> str:
     raise ValueError(f"Unknown telegram action '{action}'")
 
 
-def _execute_web_search_node(data: dict, node_input: str, run_input: str) -> str:
-    api_key = hub_settings.get_web_search_api_key()
+def _execute_web_search_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
+    api_key = user_settings.resolve_web_search_api_key(user_id)
     if not api_key:
-        raise ValueError("Web search isn't configured yet - add a Tavily API key on the Settings page")
+        raise ValueError(
+            "Web search isn't configured yet - add a Tavily API key on the Settings page, or your "
+            "own on the Account page"
+        )
     query = data.get("query") or node_input or run_input
     if not query:
         raise ValueError("This Web search node has nothing to search for")
@@ -270,10 +273,13 @@ def _execute_web_search_node(data: dict, node_input: str, run_input: str) -> str
     return "\n\n".join(f"[{r['title']}]({r['url']})\n{r['content']}" for r in results)
 
 
-def _execute_youtube_node(data: dict, node_input: str, run_input: str) -> str:
-    api_key = hub_settings.get_youtube_api_key()
+def _execute_youtube_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
+    api_key = user_settings.resolve_youtube_api_key(user_id)
     if not api_key:
-        raise ValueError("YouTube search isn't configured yet - add a YouTube API key on the Settings page")
+        raise ValueError(
+            "YouTube search isn't configured yet - add a YouTube API key on the Settings page, or "
+            "your own on the Account page"
+        )
     query = data.get("query") or node_input or run_input
     if not query:
         raise ValueError("This YouTube node has nothing to search for")

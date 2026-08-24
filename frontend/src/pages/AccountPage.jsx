@@ -20,6 +20,8 @@ export default function AccountPage() {
       <PasswordCard />
       <PersonalGoogleCard />
       <PersonalLlmCard />
+      <PersonalWebSearchCard />
+      <PersonalYouTubeCard />
     </div>
   )
 }
@@ -307,6 +309,160 @@ function PersonalLlmCard() {
 
       <div className="flex items-center gap-3">
         <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        {saved && <span className="text-xs text-signal">Saved</span>}
+      </div>
+    </form>
+  )
+}
+
+function PersonalWebSearchCard() {
+  const [settings, setSettings] = useState(null)
+  const [hub, setHub] = useState(null)
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function refresh() {
+    const [s, hubSettings] = await Promise.all([api.get('/account/settings'), api.get('/settings')])
+    setSettings(s)
+    setHub(hubSettings)
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      setSettings(await api.put('/account/settings', { web_search_api_key: apiKey }))
+      setApiKey('')
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!settings || !hub) return null
+
+  const usingPersonal = settings.web_search_key_configured
+  const activeLabel = usingPersonal
+    ? 'Active: your personal key'
+    : hub.web_search_key_configured
+      ? "Active: the hub's shared key"
+      : 'Nothing configured - Web search nodes will fail for you'
+
+  return (
+    <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Your own Tavily key</h2>
+          <Badge variant={usingPersonal || hub.web_search_key_configured ? (usingPersonal ? 'signal' : 'neutral') : 'danger'}>
+            {activeLabel}
+          </Badge>
+        </div>
+        <p className="mt-1.5 text-xs text-ink-muted">
+          Optional. Leave blank to keep using the hub-wide default, if one's set - or add your own
+          if it isn't, so Web search nodes work in flows you personally run without needing an
+          admin to configure one for the whole team. Free at{' '}
+          <a href="https://tavily.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            tavily.com
+          </a>.
+        </p>
+      </div>
+
+      <Field label="Tavily API key" hint={settings.web_search_key_configured ? undefined : 'No key configured yet'}>
+        <div className="flex items-center gap-2">
+          <TextInput
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={settings.web_search_key_configured ? '••••••••••••  (leave blank to keep current key)' : 'tvly-...'}
+          />
+          {settings.web_search_key_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+        </div>
+      </Field>
+
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="primary" disabled={!apiKey || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        {saved && <span className="text-xs text-signal">Saved</span>}
+      </div>
+    </form>
+  )
+}
+
+function PersonalYouTubeCard() {
+  const [settings, setSettings] = useState(null)
+  const [hub, setHub] = useState(null)
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function refresh() {
+    const [s, hubSettings] = await Promise.all([api.get('/account/settings'), api.get('/settings')])
+    setSettings(s)
+    setHub(hubSettings)
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      setSettings(await api.put('/account/settings', { youtube_api_key: apiKey }))
+      setApiKey('')
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!settings || !hub) return null
+
+  const usingPersonal = settings.youtube_key_configured
+  const activeLabel = usingPersonal
+    ? 'Active: your personal key'
+    : hub.youtube_key_configured
+      ? "Active: the hub's shared key"
+      : 'Nothing configured - YouTube nodes will fail for you'
+
+  return (
+    <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Your own YouTube key</h2>
+          <Badge variant={usingPersonal || hub.youtube_key_configured ? (usingPersonal ? 'signal' : 'neutral') : 'danger'}>
+            {activeLabel}
+          </Badge>
+        </div>
+        <p className="mt-1.5 text-xs text-ink-muted">
+          Optional, same idea as Tavily above - a personal key so YouTube nodes work in your own
+          flows without needing an admin to set one hub-wide. Free in{' '}
+          <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            Google Cloud Console
+          </a>{' '}
+          (enable "YouTube Data API v3", then Credentials → API key).
+        </p>
+      </div>
+
+      <Field label="YouTube API key" hint={settings.youtube_key_configured ? undefined : 'No key configured yet'}>
+        <div className="flex items-center gap-2">
+          <TextInput
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={settings.youtube_key_configured ? '••••••••••••  (leave blank to keep current key)' : 'AIza...'}
+          />
+          {settings.youtube_key_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+        </div>
+      </Field>
+
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="primary" disabled={!apiKey || saving}>{saving ? 'Saving…' : 'Save'}</Button>
         {saved && <span className="text-xs text-signal">Saved</span>}
       </div>
     </form>
