@@ -7,6 +7,11 @@ doesn't lose anyone's schedules.
 Two trigger types on purpose, not raw cron - "every 30 minutes" and "daily at
 9:00" cover the overwhelming majority of what someone building their first
 agent actually wants, without asking a newcomer to learn cron syntax.
+
+Also runs a fixed-interval job checking Telegram triggers for new messages
+(see telegram_poller.py) - this is what makes "message the bot and get a
+reply, from anywhere" actually work, instead of a flow only ever running
+when someone's looking at the hub and clicks Run.
 """
 import json
 import logging
@@ -15,17 +20,33 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import db, flow_engine
+from . import db, flow_engine, telegram_poller
 
 logger = logging.getLogger(__name__)
 
 _scheduler = BackgroundScheduler()
 
+TELEGRAM_POLL_SECONDS = 3  # felt-instant for a chat, gentle enough not to trip Telegram's rate limits
+
 
 def start() -> None:
     for schedule in db.list_all_enabled_schedules():
         _add_job(schedule)
+    _scheduler.add_job(
+        _poll_telegram_triggers,
+        trigger=IntervalTrigger(seconds=TELEGRAM_POLL_SECONDS),
+        id="telegram-trigger-poll",
+        replace_existing=True,
+        max_instances=1,  # a slow poll (network hiccup) shouldn't stack up overlapping runs
+    )
     _scheduler.start()
+
+
+def _poll_telegram_triggers() -> None:
+    try:
+        telegram_poller.check_all_triggers()
+    except Exception:  # noqa: BLE001 - must never take the whole scheduler down
+        logger.exception("Telegram trigger polling failed")
 
 
 def shutdown() -> None:

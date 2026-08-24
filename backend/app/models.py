@@ -253,6 +253,34 @@ class TelegramSendRequest(BaseModel):
     text: str
 
 
+class TelegramTriggerCreate(BaseModel):
+    bot_id: str
+
+
+class TelegramTriggerUpdate(BaseModel):
+    enabled: bool
+
+
+class TelegramTriggerOut(BaseModel):
+    id: str
+    flow_id: str
+    bot_id: str
+    bot_name: str
+    conversation_id: str
+    enabled: bool
+    created_by: str
+    created_at: float
+
+
+class TelegramTriggerRunOut(BaseModel):
+    id: str
+    incoming_text: str
+    reply_text: str | None
+    status: str
+    error_message: str | None
+    started_at: float
+
+
 class UpdateConfigRequest(BaseModel):
     repo: str
     branch: str = "main"

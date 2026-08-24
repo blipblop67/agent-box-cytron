@@ -67,6 +67,13 @@ Drive tool integrations. Pairs with the React frontend in
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
   flow picks which one to use - a Customer Support flow and a Sales flow can
   message through two entirely different bots regardless of who runs them
+- **Telegram triggers** — wire a flow to a bot (the "Telegram" button in
+  the flow editor) and it answers messages automatically: a background job
+  checks every few seconds, runs the flow with the same conversation memory
+  Chat uses, and sends the reply back - no session, no clicking Run, not
+  needing to be anywhere near the hub. This is what makes a Telegram bot
+  usable as an actual assistant instead of only something a flow can
+  proactively message (`app/telegram_poller.py`)
 - **Self-updates** — an admin points the hub at a GitHub repo/branch from
   the Settings page; "Check for updates" compares against what's installed,
   "Update now" downloads, rebuilds, and restarts - all from the browser, no
@@ -116,6 +123,7 @@ python3 tests/test_conversations.py   # Proves conversation memory by inspecting
 python3 tests/test_web_search_and_documents.py   # Web search node + one-off document text extraction
 python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean messages, not raw httpx text
 python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
+python3 tests/test_telegram_triggers.py   # Message a bot, get an auto-reply with real memory - zero /run calls
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
 python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
@@ -234,6 +242,47 @@ who's asking.
 connected the old way, it's carried forward automatically the first time
 the hub starts on this version - named "My bot," private to whoever
 connected it, still linked. Nothing to redo.
+
+### Making a bot answer automatically (Telegram triggers)
+
+Connecting a bot (above) lets a *flow* message it - useful for
+notifications, but it still needs something to trigger the flow (a click
+on Run, a Schedule). A **trigger** flips this around: the *bot* triggers
+the flow. Message the bot from your phone, anywhere, and the flow runs and
+replies on its own - checked every few seconds by a background job, not
+something that needs the hub's web UI open or anyone at the Pi.
+
+1. Connect and link a bot first (above) - a trigger needs a bot that's
+   already fully linked.
+2. Open the flow in the editor and click **Telegram** in the toolbar (next
+   to Publish). Pick the bot, click "Start listening."
+3. Message that bot on Telegram. Within a few seconds it replies - the
+   flow ran automatically, no Run button involved.
+
+**Build the flow as a plain conversation, not with explicit Telegram
+nodes.** A trigger already handles receiving the message and sending the
+reply, the same way Chat already handles both ends for the web UI - a flow
+meant to power a trigger should just be **Input → LLM → Output** (optionally
+with a Knowledge base or Web search node first), exactly like a template
+built for Chat. Adding your own "Telegram send" node to a triggered flow
+sends the reply *twice* - once from your node, once from the trigger
+delivering the flow's final output. If a flow already has explicit
+Telegram read/send nodes because it was built before triggers existed
+(or copied from one that proactively messages a *different* bot/channel),
+simplify it down to Input → LLM → Output before wiring a trigger to it.
+
+**Memory carries over exactly like Chat** - a trigger keeps one ongoing
+conversation per bot, visible from the trigger's modal ("View this
+conversation in Chat") or the Chat page directly, so a back-and-forth
+("what was my goal again?") works the same over Telegram as it does typing
+in the browser.
+
+A bot can only power one trigger at a time - wiring a second flow to a bot
+that's already listening is rejected with a clear message, since an
+incoming message would otherwise be ambiguous about which flow should
+answer it. Pausing or removing a trigger (from the same modal) stops the
+polling for that bot immediately; the conversation history stays put
+either way, so resuming later picks the same relationship back up.
 
 ### Setting up web search
 
@@ -383,6 +432,32 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Polling, not webhooks, for Telegram triggers.** A real Telegram
+  webhook needs a stable public HTTPS URL, which a Pi on a home/office LAN
+  usually doesn't have (dynamic IP, no port forwarding guaranteed). A fixed
+  3-second poll (`scheduler.py`'s `telegram-trigger-poll` job, reusing the
+  APScheduler instance schedules already run on) is what actually works
+  out of the box on the hardware this targets, and 3 seconds is
+  indistinguishable from instant for a chat use case. `getUpdates`'
+  `offset` parameter does the heavy lifting - passing the last-seen
+  update id both fetches only what's new *and* tells Telegram's servers to
+  stop redelivering everything before it, so there's no separate
+  dedup bookkeeping needed beyond storing that one integer per trigger.
+- **The poller is one plain synchronous function, not baked into
+  APScheduler's callback.** `telegram_poller.check_all_triggers()` takes no
+  arguments and returns nothing - the scheduler just calls it on an
+  interval. Every test in `test_telegram_triggers.py` calls this exact same
+  function directly, so the tests exercise the real trigger-checking logic
+  instead of a simplified stand-in, without needing to wait on a live
+  background scheduler tick (which would make the tests slow and, worse,
+  flaky under load).
+- **A trigger reuses the Chat conversation machinery wholesale**, not a
+  parallel memory system - creating a trigger calls the exact same
+  `db.create_conversation` Chat uses, and `_handle_message` loads/appends
+  history through the exact same functions `conversation_routes.py` does.
+  One person's back-and-forth over Telegram and the same conversation
+  viewed in the web Chat UI are *the same conversation*, not two things
+  kept in sync.
 - **YouTube search is modeled on Web search, not on Gmail/Drive/Calendar** -
   a hub-wide API key (`app/youtube_client.py`, `hub_settings.py`), not a
   per-person OAuth connection. The distinguishing question for any new
@@ -564,11 +639,12 @@ node, not just a final answer.
 - IMAP/SMTP fallback for non-Gmail email providers
 - Rate limiting on `/documents` uploads
 - A `PATCH` endpoint to rename a knowledge base or change its visibility
-- Webhook-style triggers (e.g. "run when a new email arrives") - schedules
-  cover time-based triggers; event-based ones would need either polling or a
-  push mechanism from Gmail/Drive/Telegram (Telegram in particular could move
-  to a webhook instead of the `getUpdates` polling `telegram_client.py` uses
-  now, once the hub has a stable public URL)
+- Event-based triggers for Gmail/Drive (e.g. "run when a new email
+  arrives") - Telegram has this now (see "Telegram triggers" above,
+  polling-based); Gmail/Drive don't yet, and would need either polling or
+  a push mechanism (a Gmail/Drive push notification needs a public URL the
+  same way a Telegram webhook would, so this would likely follow the same
+  polling approach rather than waiting on that)
 - A true "autonomous agent" node - LLM decides which tools to call, vs. the
   deterministic wiring flows use today
 - A GitHub token option for the updater (private repos, and GitHub's 60/hour
@@ -594,3 +670,13 @@ node, not just a final answer.
 - Branching/conditional logic in a flow (an If/Else or Router node) -
   flows are still a strict DAG that runs every reachable node, no
   LLM-driven "decide which path to take" yet
+- A Telegram trigger only replies to the one chat linked when the bot was
+  connected - if the bot is added to a group, or DMed by someone other
+  than whoever linked it, those messages are polled past but never
+  answered, matching the single-chat design the whole Telegram integration
+  already used. Multi-chat support (a bot that independently converses
+  with anyone who messages it) would need per-chat conversation state
+  instead of the one conversation a trigger keeps today
+- No flood protection on a trigger - each incoming message runs a full
+  flow (an LLM call, possibly a tool call) with no rate limit, so a chat
+  that gets spammed runs the flow that many times

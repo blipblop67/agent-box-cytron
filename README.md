@@ -86,8 +86,14 @@ concrete new videos based on what's already covered. Building Calendar
 surfaced a real, pre-existing bug affecting every tool-then-LLM template:
 the LLM only ever saw a tool's raw output, silently losing whatever the
 person actually asked - fixed and regression-tested, see the design notes.
-Known gaps are listed at the bottom of `backend/README.md` and
-`frontend/README.md` - mainly: no email-based "forgot password" flow
-(admin reset is the recovery path), no event-based/webhook trigger (only
-time-based schedules), conversation history is capped rather than
-summarized, and flows are DAGs without branching logic yet.
+Most recently: Telegram bots can now trigger a flow automatically -
+message a connected bot and a background job (polling every 3 seconds,
+not a webhook, since a Pi on a home network usually has no stable public
+URL) runs the flow and replies with no one needing to click Run or be near
+the hub, with the same conversation memory Chat already uses so it's a
+real back-and-forth, not one-shot answers. Known gaps are listed at the
+bottom of `backend/README.md` and `frontend/README.md` - mainly: no
+email-based "forgot password" flow (admin reset is the recovery path),
+Gmail/Drive still have no event-based trigger (only Telegram, and only
+time-based Schedules otherwise), conversation history is capped rather
+than summarized, and flows are DAGs without branching logic yet.

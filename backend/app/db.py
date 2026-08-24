@@ -151,6 +151,32 @@ CREATE TABLE IF NOT EXISTS telegram_bots (
     created_at REAL NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS telegram_triggers (
+    id TEXT PRIMARY KEY,
+    flow_id TEXT NOT NULL,
+    bot_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,     -- ongoing memory for this listener, reuses the Chat conversation machinery
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_update_id INTEGER,            -- polling position; NULL until the first poll establishes a starting point
+    created_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (flow_id) REFERENCES flows(id) ON DELETE CASCADE,
+    FOREIGN KEY (bot_id) REFERENCES telegram_bots(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS telegram_trigger_runs (
+    id TEXT PRIMARY KEY,
+    trigger_id TEXT NOT NULL,
+    incoming_text TEXT NOT NULL,
+    reply_text TEXT,
+    status TEXT NOT NULL,              -- 'success' | 'error'
+    error_message TEXT,
+    started_at REAL NOT NULL,
+    FOREIGN KEY (trigger_id) REFERENCES telegram_triggers(id) ON DELETE CASCADE
+);
 """
 
 
@@ -710,3 +736,74 @@ def set_telegram_bot_visibility(bot_id: str, visibility: str) -> None:
 def delete_telegram_bot(bot_id: str) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM telegram_bots WHERE id = ?", (bot_id,))
+
+
+# ---- telegram triggers (listen for messages, run a flow, reply automatically) --
+
+def create_telegram_trigger(flow_id: str, bot_id: str, conversation_id: str, created_by: str) -> str:
+    trigger_id = new_id()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO telegram_triggers (id, flow_id, bot_id, conversation_id, enabled, "
+            "last_update_id, created_by, created_at) VALUES (?, ?, ?, ?, 1, NULL, ?, ?)",
+            (trigger_id, flow_id, bot_id, conversation_id, created_by, time.time()),
+        )
+    return trigger_id
+
+
+def get_telegram_trigger(trigger_id: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM telegram_triggers WHERE id = ?", (trigger_id,)).fetchone()
+
+
+def get_telegram_trigger_for_bot(bot_id: str) -> sqlite3.Row | None:
+    """A bot can only be listened to by one trigger at a time - this is how
+    that's enforced (see telegram_trigger_routes.py) and how the poller
+    finds what to run for a given bot's new messages."""
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM telegram_triggers WHERE bot_id = ?", (bot_id,)).fetchone()
+
+
+def get_telegram_trigger_for_flow(flow_id: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM telegram_triggers WHERE flow_id = ?", (flow_id,)).fetchone()
+
+
+def list_enabled_telegram_triggers() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM telegram_triggers WHERE enabled = 1").fetchall()
+
+
+def set_telegram_trigger_enabled(trigger_id: str, enabled: bool) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE telegram_triggers SET enabled = ? WHERE id = ?", (int(enabled), trigger_id))
+
+
+def set_telegram_trigger_last_update_id(trigger_id: str, last_update_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE telegram_triggers SET last_update_id = ? WHERE id = ?", (last_update_id, trigger_id))
+
+
+def delete_telegram_trigger(trigger_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM telegram_triggers WHERE id = ?", (trigger_id,))
+
+
+def create_telegram_trigger_run(trigger_id: str, incoming_text: str, reply_text: str | None,
+                                 status: str, error_message: str | None) -> str:
+    run_id = new_id()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO telegram_trigger_runs (id, trigger_id, incoming_text, reply_text, status, "
+            "error_message, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, trigger_id, incoming_text, reply_text, status, error_message, time.time()),
+        )
+    return run_id
+
+
+def list_telegram_trigger_runs(trigger_id: str, limit: int = 20) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM telegram_trigger_runs WHERE trigger_id = ? ORDER BY started_at DESC LIMIT ?",
+            (trigger_id, limit),
+        ).fetchall()

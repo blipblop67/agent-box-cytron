@@ -9,9 +9,10 @@ import {
   Controls,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { ArrowLeft, Check, Lock, Users2, Clock, MessageSquare, Rocket } from 'lucide-react'
+import { ArrowLeft, Check, Lock, Users2, Clock, MessageSquare, Rocket, Radio } from 'lucide-react'
 import ScheduleModal from '../flow/ScheduleModal'
 import PublishModal from '../flow/PublishModal'
+import TelegramTriggerModal from '../flow/TelegramTriggerModal'
 import { api } from '../lib/api'
 import { useFlowEditorStore } from '../state/flowEditorStore'
 import { useCatalogStore } from '../state/catalogStore'
@@ -88,6 +89,7 @@ function Toolbar({ onBack }) {
   const [saving, setSaving] = useState(false)
   const [showSchedule, setShowSchedule] = useState(false)
   const [showPublish, setShowPublish] = useState(false)
+  const [showTelegramTrigger, setShowTelegramTrigger] = useState(false)
 
   async function handleSave() {
     setSaving(true)
@@ -123,11 +125,15 @@ function Toolbar({ onBack }) {
       <Button variant="secondary" size="sm" onClick={() => setShowPublish(true)}>
         <Rocket size={13} /> {published ? 'Published' : 'Publish'}
       </Button>
+      <Button variant="secondary" size="sm" onClick={() => setShowTelegramTrigger(true)}>
+        <Radio size={13} /> Telegram
+      </Button>
       <Button variant="secondary" size="sm" onClick={handleSave} disabled={saving || !dirty}>
         <Check size={13} /> {saving ? 'Saving…' : 'Save'}
       </Button>
       {showSchedule && <ScheduleModal flowId={flowId} onClose={() => setShowSchedule(false)} />}
       {showPublish && <PublishModal onClose={() => setShowPublish(false)} />}
+      {showTelegramTrigger && <TelegramTriggerModal flowId={flowId} onClose={() => setShowTelegramTrigger(false)} />}
     </div>
   )
 }
