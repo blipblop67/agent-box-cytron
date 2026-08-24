@@ -29,6 +29,11 @@ def status(user: dict = Depends(get_current_user)):
 
 @router.put("/config", response_model=UpdateStatus)
 def configure(body: UpdateConfigRequest, user: dict = Depends(get_current_user)):
+    # Deliberately still admin-only even though check/apply below aren't:
+    # this decides *which* GitHub repo the hub trusts and pulls code from -
+    # a different kind of decision than running an update from a source
+    # that's already been vetted, closer to "who's allowed to point this
+    # thing at arbitrary code" than "who's allowed to click update."
     _require_admin(user)
     updater.set_update_config(body.repo, body.branch)
     try:
@@ -39,7 +44,6 @@ def configure(body: UpdateConfigRequest, user: dict = Depends(get_current_user))
 
 @router.post("/check", response_model=UpdateStatus)
 def check(user: dict = Depends(get_current_user)):
-    _require_admin(user)
     try:
         return UpdateStatus(**updater.check_for_update(), configured=True)
     except updater.UpdateError as exc:
@@ -48,7 +52,6 @@ def check(user: dict = Depends(get_current_user)):
 
 @router.post("/apply", response_model=UpdateApplyResult)
 def apply(user: dict = Depends(get_current_user)):
-    _require_admin(user)
     try:
         return updater.apply_update()
     except updater.UpdateError as exc:

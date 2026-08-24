@@ -80,11 +80,15 @@ def check_for_update() -> dict:
     if not config["repo"]:
         raise UpdateError("No GitHub repository configured yet")
 
-    resp = httpx.get(
-        f"{GITHUB_API}/repos/{config['repo']}/commits/{config['branch']}",
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=15,
-    )
+    try:
+        resp = httpx.get(
+            f"{GITHUB_API}/repos/{config['repo']}/commits/{config['branch']}",
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=15,
+        )
+    except httpx.HTTPError as exc:
+        raise UpdateError(f"Couldn't reach GitHub to check for updates: {exc}") from exc
+
     if resp.status_code == 404:
         raise UpdateError(
             f"Couldn't find {config['repo']}@{config['branch']} on GitHub. Either the repo/branch "
@@ -92,7 +96,16 @@ def check_for_update() -> dict:
             f"GitHub returns this same 'not found' error for private repos as for ones that don't "
             f"exist at all, so it can only see public repositories."
         )
-    resp.raise_for_status()
+    if resp.status_code == 403:
+        raise UpdateError(
+            "GitHub turned down this check (403) - almost always its anonymous rate limit (60 "
+            "requests/hour, shared by everyone checking from this network), not a problem with the "
+            "repo itself. Wait a bit and try again."
+        )
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise UpdateError(f"GitHub returned an error checking for updates ({resp.status_code})") from exc
     data = resp.json()
 
     latest_sha = data["sha"]

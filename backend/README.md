@@ -83,10 +83,14 @@ Drive tool integrations. Pairs with the React frontend in
   usable as an actual assistant instead of only something a flow can
   proactively message (`app/telegram_poller.py`)
 - **Self-updates** — an admin points the hub at a GitHub repo/branch from
-  the Settings page; "Check for updates" compares against what's installed,
-  "Update now" downloads, rebuilds, and restarts - all from the browser, no
-  SSH needed. User data lives entirely outside the code directory this
-  touches, so it's untouched by design, not by care (`app/updater.py`)
+  the Settings page (that part stays admin-only - it decides which code
+  the hub trusts). "Check for updates" and "Update now" themselves are
+  open to anyone on the team, not just admins - compares against what's
+  installed, downloads, rebuilds, and restarts, all from the browser, no
+  SSH needed, with a plain confirmation first since it restarts the hub
+  for everyone currently using it. User data lives entirely outside the
+  code directory this touches, so it's untouched by design, not by care
+  (`app/updater.py`)
 - **Publish a flow as an API** — the "Publish" button in the flow editor
   generates an API key; anything outside the hub (a website, a script,
   another app) can then call that one flow with `X-API-Key`, no login, no
@@ -495,6 +499,23 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **Checking/applying an update is open to the whole team; choosing which
+  repo to trust isn't.** `update_routes.py` splits these on purpose: the
+  repo/branch a hub pulls code from (`PUT /config`) stays admin-only,
+  since that's a supply-chain decision - who gets to point the hub at
+  arbitrary code - while running an update from whatever source is
+  *already* configured (`POST /check`, `POST /apply`) doesn't carry that
+  same risk, so there's no reason to gate it to admins specifically. The
+  frontend still confirms before applying (it restarts the hub for
+  everyone currently using it), just no longer checks role first.
+- **A GitHub 403 gets the same clean-error treatment a 404 already got.**
+  Found by hitting it directly, not hypothetically: `check_for_update()`
+  only converted a 404 (private/missing repo) into a readable message -
+  anything else, including GitHub's anonymous rate limit (60 requests/
+  hour, returned as a 403), fell through to a raw `raise_for_status()`
+  and crashed the endpoint with an unhandled 500. Worth fixing regardless,
+  but especially now: opening "check for updates" to everyone makes that
+  shared 60/hour limit easier to hit, not harder.
 - **The forgot-password endpoint always returns the same response.**
   `POST /api/auth/forgot-password` looks identical to the caller whether
   the name doesn't exist, exists but has no recovery email, exists and has

@@ -30,7 +30,8 @@ export default function SettingsPage() {
       {!isAdmin && (
         <div className="mt-4 flex items-center gap-2 rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs text-ink-muted">
           <ShieldAlert size={14} className="shrink-0 text-copper" />
-          Only a hub admin can change these. You can still see what's configured.
+          Most of this needs a hub admin to change - you can still see what's configured, and
+          anyone can check for and install software updates.
         </div>
       )}
 
@@ -491,6 +492,7 @@ function UpdatesCard({ isAdmin }) {
   }
 
   async function handleApply() {
+    if (!confirm('This installs the update and restarts the hub - anyone else using it right now will be disconnected for a few seconds. Continue?')) return
     setApplying(true)
     setError(null)
     try {
@@ -588,11 +590,9 @@ function UpdatesCard({ isAdmin }) {
                 <Download size={13} /> Update available - {status.latest_version.slice(0, 7)}
               </div>
               <p className="mt-1 text-xs text-ink-muted">{status.latest_message}</p>
-              {isAdmin && (
-                <Button variant="primary" size="sm" className="mt-2.5" onClick={handleApply} disabled={applying}>
-                  {applying ? 'Installing… this can take a minute' : 'Update now'}
-                </Button>
-              )}
+              <Button variant="primary" size="sm" className="mt-2.5" onClick={handleApply} disabled={applying}>
+                {applying ? 'Installing… this can take a minute' : 'Update now'}
+              </Button>
             </div>
           ) : !status.error ? (
             <div className="flex items-center gap-1.5 rounded-md border border-signal/30 bg-signal-dim px-3 py-2 text-xs text-signal">

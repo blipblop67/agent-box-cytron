@@ -123,6 +123,21 @@ def main():
     assert forbidden.status_code == 403
     print("[ok] only a hub admin can configure the update repo")
 
+    # --- but any team member, not just an admin, can check for and apply updates ---
+    with patch("httpx.get", return_value=fake_commit_response("sha-checked-by-member-222")):
+        member_check = client.post("/api/updates/check", headers=other_headers)
+    assert member_check.status_code == 200
+    assert member_check.json()["latest_version"] == "sha-checked-by-member-222"
+    print("[ok] a non-admin team member can check for updates")
+
+    # --- the /apply route itself is no longer admin-gated either (the actual update
+    # mechanics are exercised thoroughly further down via a direct function call -
+    # this just proves the HTTP route's permission check specifically) ---
+    with patch("app.updater.apply_update", return_value={"updated_to": "sha-x", "auto_restarting": False}):
+        member_apply = client.post("/api/updates/apply", headers=other_headers, json={})
+    assert member_apply.status_code == 200
+    print("[ok] a non-admin team member can apply an update (route-level check only)")
+
     # --- an admin can still override it, e.g. to point at their own fork ---
     with patch("httpx.get", return_value=fake_commit_response("sha-latest-111")):
         configured = client.put(
@@ -140,6 +155,17 @@ def main():
     assert broken_status["configured"] is True
     assert broken_status["error"] is not None and "public" in broken_status["error"]
     print("[ok] an unreachable/private repo shows a clear error instead of breaking the page")
+
+    # --- GitHub's anonymous rate limit (403) also degrades cleanly, not a raw 500 -
+    # found via live testing: this sandbox itself hit this exact rate limit while
+    # testing the permission change above, and the endpoint crashed until fixed ---
+    def fake_403_get(url, **kwargs):
+        return FakeGetResponse({"message": "rate limited"}, status_code=403)
+    with patch("httpx.get", side_effect=fake_403_get):
+        rate_limited_status = client.get("/api/updates/status", headers=headers)
+    assert rate_limited_status.status_code == 200  # never a raw 500
+    assert "rate limit" in rate_limited_status.json()["error"]
+    print("[ok] GitHub's anonymous rate limit (403) shows a clear error instead of a raw 500")
 
     # restore a working mock before continuing
     with patch("httpx.get", return_value=fake_commit_response("sha-latest-111")):
