@@ -47,6 +47,19 @@ def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 
+PASSWORD_RESET_TTL_SECONDS = 60 * 60  # 1 hour - short-lived on purpose, it's emailed as a plain link
+
+
+def new_password_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_password_reset_token(token: str) -> str:
+    # Same reasoning as API keys: a high-entropy generated token, not a
+    # user-chosen secret, so a fast hash for lookup is correct here too.
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 # ---- login throttling ------------------------------------------------------------
 # In-memory, per display name (not per-IP - on a LAN, IPs are often shared/NATed,
 # and the name is the more meaningful identity boundary for this threat model).
@@ -76,3 +89,26 @@ def record_failed_attempt(name: str) -> None:
 
 def clear_attempts(name: str) -> None:
     _failed_attempts.pop(name, None)
+
+
+# ---- password-reset-email throttling ----------------------------------------------
+# Separate from login throttling above: this limits how many reset emails
+# can be triggered for a given name, not how many wrong passwords were
+# tried - protects the SMTP account from being used to spam someone, or
+# from burning through a provider's sending quota/rate limit.
+
+RESET_EMAIL_MAX_REQUESTS = 3
+RESET_EMAIL_WINDOW_SECONDS = 900  # 15 minutes
+
+_reset_email_requests: dict[str, list[float]] = {}
+
+
+def can_request_password_reset(name: str) -> bool:
+    now = time.time()
+    recent = [t for t in _reset_email_requests.get(name, []) if now - t < RESET_EMAIL_WINDOW_SECONDS]
+    _reset_email_requests[name] = recent
+    return len(recent) < RESET_EMAIL_MAX_REQUESTS
+
+
+def record_password_reset_request(name: str) -> None:
+    _reset_email_requests.setdefault(name, []).append(time.time())

@@ -10,7 +10,15 @@ Drive tool integrations. Pairs with the React frontend in
 - **Real accounts** — name + password, bcrypt-hashed, session tokens, not a
   name-only stub. First person to register becomes admin. An admin can reset
   anyone's password or remove someone from the team; anyone can change their
-  own password (`app/security.py`, `app/auth_routes.py`)
+  own password (`app/security.py`, `app/auth_routes.py`). "Forgot password?"
+  on the login screen is self-service too, if the person set a recovery
+  email on their Account page and an admin's configured outgoing email
+  (Settings → Outgoing email) - a single-use, hour-long link, the same
+  pattern any real app uses, not a plaintext password mailed around
+  (`app/email_sender.py`). No recovery email set, or no SMTP configured?
+  An admin resets it from the Team page - or if the only admin is the one
+  locked out, `backend/reset_password.py` from a terminal (see the Auth
+  section below)
 - **Flows** — save a graph of nodes (Input, LLM, Knowledge base, Web search,
   Email, Drive, Telegram, Calculator, Output), then run it and get back the
   final output plus a step-by-step trace of what each node did
@@ -129,6 +137,7 @@ python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and 
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_reset_password_script.py   # The emergency CLI recovery tool, run as a real subprocess
+python3 tests/test_forgot_password.py   # Email-based reset: no enumeration, single-use tokens, rate limiting
 ```
 
 ## Team accounts and admin
@@ -405,29 +414,66 @@ A few things worth knowing:
   IP across everyone.
 - **Password hashes never leave the backend** - `routes.py`'s `_user_out`
   is the one place that decides what's safe to return from `list_users()`.
-- **An admin can reset anyone's password** (Team page /
-  `PATCH /api/users/{id}/password`) - useful since there's no email-based
-  reset flow. Self-service change is on the Account page
-  (`POST /api/auth/change-password`); both invalidate every existing
-  session for that user, forcing a fresh login with the new password.
-- **Locked out entirely** (forgot the only admin's password, or the only
-  admin account is otherwise unreachable)? There's no in-browser recovery
-  for this - by design, the same way there's no email-based reset for
-  anyone. From a terminal on the same machine the hub runs on:
-  ```bash
-  cd agent-hub/backend
-  python3 reset_password.py
-  ```
-  Lists every account, asks which one, asks for a new password twice, sets
-  it exactly the way a normal reset would (same hashing, same session
-  invalidation) - nothing hacky, no editing the database by hand. This is
-  a local-shell tool on purpose, not a web endpoint: anyone with shell
-  access to the machine already has full access to the SQLite file itself,
-  so there's no security gained by making this harder to reach - only
-  friction for the actual admin locked out of their own hub.
-  `tests/test_reset_password_script.py` runs this exact script as a real
-  subprocess and confirms the old password stops working and the new one
-  logs in correctly.
+- **Three ways to recover a forgotten password**, in the order most people
+  will actually reach for them:
+  1. **Self-service, "Forgot password?" on the login screen** - only works
+     if the person set a recovery email (Account page) *and* an admin
+     configured outgoing SMTP (Settings → Outgoing email). Sends a
+     single-use link that expires in an hour
+     (`POST /api/auth/forgot-password`, `POST /api/auth/reset-password`).
+     Deliberately returns the exact same response whether the name exists,
+     has no email, or hit the rate limit (3 requests / 15 min per name) -
+     nothing about this endpoint can be used to discover who's registered.
+     A stale link is invalidated the moment the password changes any other
+     way (self-service change, admin reset, the CLI tool below), so an old
+     email lying around in an inbox can't undo a more recent change.
+  2. **An admin resets it** (Team page / `PATCH /api/users/{id}/password`)
+     - works regardless of whether that person set a recovery email or SMTP
+     is configured at all.
+  3. **Locked out entirely** (forgot the only admin's password, no
+     recovery email set, no SMTP configured)? From a terminal on the same
+     machine the hub runs on:
+     ```bash
+     cd agent-hub/backend
+     python3 reset_password.py
+     ```
+     Lists every account, asks which one, asks for a new password twice,
+     sets it exactly the way a normal reset would (same hashing, same
+     session invalidation) - nothing hacky, no editing the database by
+     hand. This is a local-shell tool on purpose, not a web endpoint:
+     anyone with shell access to the machine already has full access to
+     the SQLite file itself, so there's no security gained by making this
+     harder to reach - only friction for the actual admin locked out of
+     their own hub. `tests/test_reset_password_script.py` runs this exact
+     script as a real subprocess and confirms the old password stops
+     working and the new one logs in correctly.
+  All three end the same way: every existing session for that account is
+  invalidated, forcing a fresh login with the new password.
+
+### Setting up outgoing email (for self-service password reset)
+
+Settings → Outgoing email: host, port, username, password, from address,
+and whether to use STARTTLS. Any real SMTP server works - a dedicated
+transactional-email provider if you have one, or just a personal Gmail
+account with an [app password](https://support.google.com/accounts/answer/185833)
+(not your regular Gmail password - Google blocks plain-password SMTP
+login): host `smtp.gmail.com`, port `587`, STARTTLS on.
+
+Hub-wide only, admin-configured, the same reasoning as the web search and
+YouTube keys - this isn't a personal credential like a Google OAuth app,
+it's shared infrastructure for one system function (reset emails), so
+there's no reason for it to be per-person.
+
+Once it's saved, use "Send a test email" right there on the Settings card
+to confirm it actually works - genuinely worth doing before relying on it,
+since the whole point is having a working recovery path *before* you need
+one, not discovering an SMTP typo during an actual lockout.
+
+Each person then sets their own recovery email on the Account page - it's
+optional, personal, and nobody else (including admins) can see it. Without
+it, "Forgot password?" for that account always falls through to its
+generic "if that account has a recovery email set up..." response, same as
+if SMTP weren't configured at all.
 
 ## How a flow actually runs
 
@@ -449,6 +495,25 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **The forgot-password endpoint always returns the same response.**
+  `POST /api/auth/forgot-password` looks identical to the caller whether
+  the name doesn't exist, exists but has no recovery email, exists and has
+  one but SMTP isn't configured, or hit its rate limit - every branch in
+  `auth_routes.py` returns the exact same generic message. This is a
+  standard property for any account-recovery endpoint (not unique to this
+  project) because the alternative - a different response for "no such
+  account" vs "email sent" - turns the endpoint into a way to enumerate
+  which names are registered on the hub, one guess at a time.
+  `tests/test_forgot_password.py` asserts the response bodies are
+  byte-for-byte identical across all of those cases, not just that they
+  all happen to return 200.
+- **Password-reset-email rate limiting is a separate throttle from login
+  throttling** (`security.py`'s `can_request_password_reset`, distinct
+  from the existing `is_locked_out`), because they're protecting against
+  different things: login throttling limits guessed passwords, this limits
+  how many emails a name can trigger - protecting the SMTP account/quota
+  and whoever owns that inbox from being spammed, which a failed-login
+  counter has nothing to do with.
 - **Polling, not webhooks, for Telegram triggers.** A real Telegram
   webhook needs a stable public HTTPS URL, which a Pi on a home/office LAN
   usually doesn't have (dynamic IP, no port forwarding guaranteed). A fixed
@@ -647,12 +712,17 @@ node, not just a final answer.
 
 ## Not done yet (natural next slices)
 
-- Email-based password reset - self-service, in-browser "forgot password"
-  still doesn't exist, since that needs outbound email the hub doesn't
-  send. The recovery paths that do exist: an admin resetting a teammate's
-  password from the Team page, or - if the only admin is the one locked
-  out - `backend/reset_password.py` from a terminal on the hub's own
-  machine (see the Auth section above)
+- No email verification step when someone sets a recovery email on the
+  Account page - it's trusted at face value. A typo'd or someone-else's
+  address means a reset link would go nowhere useful (harmless) or
+  somewhere it shouldn't (worth knowing, low severity since a reset link
+  alone doesn't reveal the account's current password, just lets someone
+  set a new one - which they'd then need the login screen to actually use)
+- No confirmation email after a successful reset - the request email
+  itself says "someone (hopefully you) asked to reset..." as a notice, but
+  there's no separate "your password was just changed" email sent
+  afterward, so someone who requested a reset then got interrupted
+  wouldn't get a second signal that it actually completed
 - Two-factor auth / passkeys - password-only for now
 - Delete-file-from-disk cleanup when a document row is deleted (currently
   leaves the raw upload on disk even after the DB row and vectors are gone)

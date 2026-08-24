@@ -1,9 +1,10 @@
 """
 Hub-wide settings an admin sets once from the Settings page, instead of
 editing config files: the LLM provider, Google OAuth app credentials for
-Gmail/Drive/Calendar, a web search API key, and a YouTube API key. Secrets
-(OpenRouter key, Google client secret, Tavily key, YouTube key) are
-encrypted at rest with the same vault used for OAuth tokens.
+Gmail/Drive/Calendar, a web search API key, a YouTube API key, and outgoing
+SMTP settings (for password-reset emails). Secrets (OpenRouter key, Google
+client secret, Tavily key, YouTube key, SMTP password) are encrypted at
+rest with the same vault used for OAuth tokens.
 
 Google's redirect URIs are deliberately *not* a setting here - they're
 derived from the request that hits /auth/start (see gmail_routes.py /
@@ -20,6 +21,11 @@ DEFAULTS = {
     "ollama_base_url": "http://localhost:11434",
     "ollama_model": "",                   # e.g. "llama3.1" - admin picks whatever they've pulled
     "google_client_id": "",
+    "smtp_host": "",
+    "smtp_port": "587",
+    "smtp_username": "",
+    "smtp_from_address": "",
+    "smtp_use_tls": "true",               # "true" -> STARTTLS on smtp_port (587 typical); "false" -> implicit TLS (465 typical)
 }
 
 
@@ -39,6 +45,9 @@ def get_settings() -> dict:
     )
     settings["web_search_key_configured"] = db.get_setting("web_search_api_key_encrypted") is not None
     settings["youtube_key_configured"] = db.get_setting("youtube_api_key_encrypted") is not None
+    settings["smtp_use_tls"] = settings["smtp_use_tls"] == "true"
+    settings["smtp_password_configured"] = db.get_setting("smtp_password_encrypted") is not None
+    settings["smtp_configured"] = bool(settings["smtp_host"] and settings["smtp_from_address"])
     return settings
 
 
@@ -46,7 +55,10 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
                      openrouter_model: str | None = None, ollama_base_url: str | None = None,
                      ollama_model: str | None = None, google_client_id: str | None = None,
                      google_client_secret: str | None = None, web_search_api_key: str | None = None,
-                     youtube_api_key: str | None = None) -> None:
+                     youtube_api_key: str | None = None, smtp_host: str | None = None,
+                     smtp_port: str | None = None, smtp_username: str | None = None,
+                     smtp_password: str | None = None, smtp_from_address: str | None = None,
+                     smtp_use_tls: bool | None = None) -> None:
     if llm_provider is not None:
         db.set_setting("llm_provider", llm_provider)
     if openrouter_model is not None:
@@ -65,6 +77,18 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
         db.set_setting("web_search_api_key_encrypted", crypto_vault.encrypt(web_search_api_key).decode())
     if youtube_api_key:  # only overwrite if a new one was actually provided
         db.set_setting("youtube_api_key_encrypted", crypto_vault.encrypt(youtube_api_key).decode())
+    if smtp_host is not None:
+        db.set_setting("smtp_host", smtp_host)
+    if smtp_port is not None:
+        db.set_setting("smtp_port", smtp_port)
+    if smtp_username is not None:
+        db.set_setting("smtp_username", smtp_username)
+    if smtp_from_address is not None:
+        db.set_setting("smtp_from_address", smtp_from_address)
+    if smtp_use_tls is not None:
+        db.set_setting("smtp_use_tls", "true" if smtp_use_tls else "false")
+    if smtp_password:  # only overwrite if a new one was actually provided
+        db.set_setting("smtp_password_encrypted", crypto_vault.encrypt(smtp_password).decode())
 
 
 def get_openrouter_api_key() -> str | None:
@@ -97,3 +121,18 @@ def get_youtube_api_key() -> str | None:
     if stored is None:
         return None
     return crypto_vault.decrypt(stored.encode())
+
+
+def get_smtp_settings() -> dict:
+    """Shaped for email_sender.py to consume directly."""
+    settings = get_settings()
+    stored_password = db.get_setting("smtp_password_encrypted")
+    return {
+        "host": settings["smtp_host"],
+        "port": int(settings["smtp_port"] or 587),
+        "username": settings["smtp_username"],
+        "password": crypto_vault.decrypt(stored_password.encode()) if stored_password else "",
+        "from_address": settings["smtp_from_address"],
+        "use_tls": settings["smtp_use_tls"],
+        "configured": settings["smtp_configured"],
+    }

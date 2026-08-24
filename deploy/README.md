@@ -175,11 +175,40 @@ cd agent-hub
 
 ## Troubleshooting
 
-- **Can't reach `agenthub.local` from another device**: try the Pi's IP
-  address directly (`hostname -I` on the Pi) instead of the `.local` name -
-  some routers or "guest"/isolated Wi-Fi networks block mDNS or block
-  devices from seeing each other entirely. If the IP doesn't work either,
-  check `sudo systemctl status agent-hub` on the Pi first.
+- **Can't reach the hub from another device on the same Wi-Fi at all**
+  (not even by IP address, e.g. `http://192.168.1.95:8811` times out or
+  refuses to connect) - work through these in order:
+  1. **Confirm it's actually running**: `sudo systemctl status agent-hub`
+     on the Pi. If it's not "active (running)", nothing on the network
+     will reach it regardless of IP/firewall - see the log line below.
+  2. **Confirm the IP is still current**: `hostname -I` on the Pi - DHCP
+     can hand out a different address after a reboot or router restart if
+     the Pi doesn't have a reserved/static IP. If it changed, that's the
+     whole problem.
+  3. **Check the Pi's own firewall**, if you ever enabled one:
+     `sudo ufw status` - if it says "active" and port 8811 isn't listed,
+     `sudo ufw allow 8811`.
+  4. **Router/Wi-Fi client isolation**: some routers (especially
+     guest networks, or mesh systems with an "isolate clients" or "AP
+     isolation" setting) block devices on the same Wi-Fi from reaching
+     each other entirely, even though both have internet access fine.
+     This is a router setting, not something fixable on the Pi - check
+     your router's admin page, or try both devices on a different network
+     to confirm this is the cause.
+  5. **Running on Windows instead of the Pi** (`windows-run.ps1`)? The
+     very first time it starts listening on a network port, Windows
+     commonly shows a "Windows Defender Firewall has blocked some
+     features of this app" popup - if you (or whoever's used that laptop)
+     ever dismissed it, or only checked "Private networks", other devices
+     on the same Wi-Fi are silently blocked even though `localhost:8811`
+     still works fine on that laptop itself. Windows Settings → Update &
+     Security → Windows Security → Firewall & network protection →
+     "Allow an app through firewall" → find Python/uvicorn → check both
+     Private and Public.
+- **Can't reach `agenthub.local` specifically, but the IP works fine**:
+  some routers or isolated Wi-Fi networks block mDNS (the `.local` name
+  resolution) specifically, even with client isolation off - just use the
+  IP address directly going forward (`hostname -I` on the Pi).
 - **Service is "active" but the page won't load**: check
   `journalctl -u agent-hub -n 50` for the actual error - usually a missing
   `backend/app/static` build or a dependency that failed to install.

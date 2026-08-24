@@ -73,6 +73,7 @@ def main():
 
     db.set_user_password(user_id, security.hash_password(new_password))
     db.delete_all_sessions_for_user(user_id)  # matches what a normal reset does - forces a fresh login
+    db.invalidate_password_reset_tokens_for_user(user_id)  # a stale email link shouldn't override this
 
     print(f"\nDone. '{user['name']}' can log in with the new password now.")
     print("Any existing sessions for this account were signed out, same as a normal reset.")

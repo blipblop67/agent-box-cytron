@@ -66,10 +66,30 @@ if ($Rebuild -or -not (Test-Path $VenvDir)) {
 }
 
 Write-Host ""
-Write-Host "==> Starting Agent Hub - open http://localhost:8811 in your browser" -ForegroundColor Green
+Write-Host "==> Starting Agent Hub" -ForegroundColor Green
+Write-Host "    On this computer:     http://localhost:8811"
+
+$LanIPs = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {
+    $_.IPAddress -notmatch '^127\.' -and $_.IPAddress -notmatch '^169\.254\.'
+} | Select-Object -ExpandProperty IPAddress -Unique
+if ($LanIPs) {
+    foreach ($ip in $LanIPs) {
+        Write-Host "    From another device:  http://${ip}:8811"
+    }
+} else {
+    Write-Host "    Couldn't detect a LAN IP automatically - run 'ipconfig' and look for" -ForegroundColor Yellow
+    Write-Host "    the IPv4 Address under your Wi-Fi or Ethernet adapter." -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "    First time only: Windows may show a 'Windows Defender Firewall has" -ForegroundColor Yellow
+Write-Host "    blocked some features of this app' popup - check BOTH Private and" -ForegroundColor Yellow
+Write-Host "    Public networks and click 'Allow access', or other devices on the" -ForegroundColor Yellow
+Write-Host "    same Wi-Fi won't be able to reach it even though this works fine." -ForegroundColor Yellow
+Write-Host ""
 Write-Host "    Press Ctrl+C in this window to stop it."
 Write-Host ""
 
 Push-Location $BackendDir
-& "$VenvDir\Scripts\uvicorn.exe" app.main:app --host 127.0.0.1 --port 8811
+& "$VenvDir\Scripts\uvicorn.exe" app.main:app --host 0.0.0.0 --port 8811
 Pop-Location

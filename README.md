@@ -91,14 +91,23 @@ message a connected bot and a background job (polling every 3 seconds,
 not a webhook, since a Pi on a home network usually has no stable public
 URL) runs the flow and replies with no one needing to click Run or be near
 the hub, with the same conversation memory Chat already uses so it's a
-real back-and-forth, not one-shot answers. Most recently: a `reset_password.py`
+real back-and-forth, not one-shot answers. Since then: a `reset_password.py`
 CLI tool for the genuinely-locked-out case (forgot the only admin's
-password) - a local-shell recovery path, not a web endpoint, since anyone
-with shell access to the hub's machine already has full access to the
-database file itself. Known gaps are listed at the bottom of
-`backend/README.md` and `frontend/README.md` - mainly: no email-based,
-self-service "forgot password" flow in the browser (an admin resetting a
-teammate, or the CLI tool for the admin themself, are the recovery paths),
-Gmail/Drive still have no event-based trigger (only Telegram, and only
-time-based Schedules otherwise), conversation history is capped rather
-than summarized, and flows are DAGs without branching logic yet.
+password, no recovery email set, no SMTP configured) - a local-shell
+recovery path, not a web endpoint, since anyone with shell access to the
+hub's machine already has full access to the database file itself; and, on
+top of that, a real self-service "Forgot password?" flow in the browser -
+an optional recovery email per person, admin-configured outgoing SMTP, and
+a single-use emailed link, verified end-to-end through an actual browser
+against an actual running server (not just backend tests) by capturing the
+real email content, extracting the real link from it, and completing a
+real login with the new password. Also fixed a real bug in
+`deploy/windows-run.ps1`: it was binding to `127.0.0.1` (localhost-only),
+which would silently block every other device on the same Wi-Fi from
+reaching the hub - now binds to `0.0.0.0` and prints the LAN IP to use from
+another device on startup. Known gaps are listed at the bottom of
+`backend/README.md` and `frontend/README.md` - mainly: no email
+verification step when someone sets a recovery email (trusted at face
+value), Gmail/Drive still have no event-based trigger (only Telegram, and
+only time-based Schedules otherwise), conversation history is capped
+rather than summarized, and flows are DAGs without branching logic yet.

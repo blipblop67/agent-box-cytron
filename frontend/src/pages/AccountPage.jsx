@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CircleCheck, ExternalLink, Copy, Check, KeyRound } from 'lucide-react'
+import { CircleCheck, ExternalLink, Copy, Check, KeyRound, Mail } from 'lucide-react'
 import { api, clearStoredToken } from '../lib/api'
 import { Field, TextInput } from '../components/common/FormField'
 import Button from '../components/common/Button'
@@ -16,10 +16,56 @@ export default function AccountPage() {
         Personal to {user.name} - nobody else, including admins, can see these.
       </p>
 
+      <EmailCard />
       <PasswordCard />
       <PersonalGoogleCard />
       <PersonalLlmCard />
     </div>
+  )
+}
+
+function EmailCard() {
+  const user = useUserStore((s) => s.user)
+  const setUser = useUserStore.setState
+  const [email, setEmail] = useState(user.email || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      await api.patch('/me/email', { email: email.trim() || null })
+      setUser((s) => ({ ...s, user: { ...s.user, email: email.trim() || null } }))
+      setSaved(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-6 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <Mail size={15} className="text-copper" />
+        <h2 className="text-sm font-semibold text-ink">Recovery email</h2>
+      </div>
+      <p className="text-xs text-ink-muted">
+        Optional, but without it "Forgot password?" on the login screen has nothing to send a reset
+        link to. Nobody else can see this, including admins.
+      </p>
+      <Field label="Email">
+        <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+      </Field>
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        {saved && <span className="text-xs text-signal">Saved</span>}
+      </div>
+    </form>
   )
 }
 

@@ -32,7 +32,7 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     if user is None:
         raise HTTPException(status_code=401, detail="Session expired or invalid - please log in again")
 
-    return {"id": user["id"], "name": user["name"], "role": user["role"]}
+    return {"id": user["id"], "name": user["name"], "role": user["role"], "email": user["email"]}
 
 
 def extract_bearer_token(authorization: str | None) -> str | None:

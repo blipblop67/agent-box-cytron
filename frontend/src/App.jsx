@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import LoginGate from './components/LoginGate'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import AppShell from './components/layout/AppShell'
 import FlowsPage from './pages/FlowsPage'
 import FlowEditorPage from './pages/FlowEditorPage'
@@ -17,6 +18,7 @@ export default function App() {
   const status = useUserStore((s) => s.status)
   const user = useUserStore((s) => s.user)
   const init = useUserStore((s) => s.init)
+  const location = useLocation()
 
   useEffect(() => {
     init()
@@ -30,6 +32,12 @@ export default function App() {
         </div>
       </div>
     )
+  }
+
+  // Reachable regardless of login state - someone clicking a password reset
+  // link from their email is, by definition, not logged in.
+  if (location.pathname === '/reset-password') {
+    return <ResetPasswordPage />
   }
 
   if (!user) {

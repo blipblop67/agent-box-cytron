@@ -14,6 +14,7 @@ from .models import (
     KnowledgeBaseOut,
     QueryRequest,
     QueryResponse,
+    UpdateEmailRequest,
 )
 
 router = APIRouter()
@@ -45,6 +46,15 @@ def me(user: dict = Depends(get_current_user)):
     return user
 
 
+@router.patch("/me/email")
+def update_my_email(body: UpdateEmailRequest, user: dict = Depends(get_current_user)):
+    email = (body.email or "").strip() or None
+    if email is not None and ("@" not in email or "." not in email.split("@")[-1]):
+        raise HTTPException(400, "That doesn't look like a valid email address")
+    db.set_user_email(user["id"], email)
+    return {"email": email}
+
+
 @router.get("/users")
 def list_team(user: dict = Depends(get_current_user)):
     return [_user_out(u) for u in db.list_users()]
@@ -72,6 +82,7 @@ def admin_reset_password(user_id: str, body: AdminPasswordResetRequest, admin: d
         raise HTTPException(400, f"Password must be at least {security.MIN_PASSWORD_LENGTH} characters")
     db.set_user_password(user_id, security.hash_password(body.new_password))
     db.delete_all_sessions_for_user(user_id)  # they'll need to log in again with the new password
+    db.invalidate_password_reset_tokens_for_user(user_id)  # a stale email link shouldn't override this
     return {"reset": True}
 
 

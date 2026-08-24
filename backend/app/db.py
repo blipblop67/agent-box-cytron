@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     password_hash TEXT,
+    email TEXT,                            -- optional, only used for password-reset emails
     role TEXT NOT NULL DEFAULT 'member',   -- 'admin' | 'member'
     created_at REAL NOT NULL
 );
@@ -177,6 +178,15 @@ CREATE TABLE IF NOT EXISTS telegram_trigger_runs (
     started_at REAL NOT NULL,
     FOREIGN KEY (trigger_id) REFERENCES telegram_triggers(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_hash TEXT PRIMARY KEY,       -- same fast-hash approach as API keys, not bcrypt - see security.py
+    user_id TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 """
 
 
@@ -208,6 +218,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
     if "password_hash" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+    if "email" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
 
     flow_columns = {row["name"] for row in conn.execute("PRAGMA table_info(flows)")}
     if "api_key_hash" not in flow_columns:
@@ -258,6 +270,21 @@ def create_user(user_id: str, name: str, password_hash: str, role: str | None = 
 def set_user_password(user_id: str, password_hash: str) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+
+def set_user_email(user_id: str, email: str | None) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET email = ? WHERE id = ?", (email, user_id))
+
+
+def get_user_by_email(email: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        # emails aren't case-sensitive in practice, even though SQLite's
+        # default comparison is - COLLATE NOCASE keeps "Alex@x.com" and
+        # "alex@x.com" matching the same account
+        return conn.execute(
+            "SELECT * FROM users WHERE email = ? COLLATE NOCASE", (email,)
+        ).fetchone()
 
 
 def set_user_role(user_id: str, role: str) -> None:
@@ -807,3 +834,36 @@ def list_telegram_trigger_runs(trigger_id: str, limit: int = 20) -> list[sqlite3
             "SELECT * FROM telegram_trigger_runs WHERE trigger_id = ? ORDER BY started_at DESC LIMIT ?",
             (trigger_id, limit),
         ).fetchall()
+
+
+# ---- password reset tokens (email-based "forgot password") ---------------------
+
+def create_password_reset_token(token_hash: str, user_id: str, ttl_seconds: int) -> None:
+    now = time.time()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO password_reset_tokens (token_hash, user_id, expires_at, used, created_at) "
+            "VALUES (?, ?, ?, 0, ?)",
+            (token_hash, user_id, now + ttl_seconds, now),
+        )
+
+
+def get_valid_password_reset_token(token_hash: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE token_hash = ? AND used = 0 AND expires_at > ?",
+            (token_hash, time.time()),
+        ).fetchone()
+
+
+def mark_password_reset_token_used(token_hash: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE password_reset_tokens SET used = 1 WHERE token_hash = ?", (token_hash,))
+
+
+def invalidate_password_reset_tokens_for_user(user_id: str) -> None:
+    """Called whenever a password actually changes some other way (self-service
+    change, admin reset, the CLI script) so a stale reset link from before
+    that change can't be used to overwrite the new password."""
+    with get_conn() as conn:
+        conn.execute("UPDATE password_reset_tokens SET used = 1 WHERE user_id = ? AND used = 0", (user_id,))

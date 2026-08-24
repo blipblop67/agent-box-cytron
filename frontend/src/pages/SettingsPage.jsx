@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper, Globe, Clapperboard } from 'lucide-react'
+import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper, Globe, Clapperboard, Mail } from 'lucide-react'
 import { api } from '../lib/api'
 import { Field, TextInput, Select } from '../components/common/FormField'
 import Button from '../components/common/Button'
@@ -38,6 +38,7 @@ export default function SettingsPage() {
       <GoogleSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <SmtpSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <UpdatesCard isAdmin={isAdmin} />
     </div>
   )
@@ -317,6 +318,127 @@ function YouTubeSettingsCard({ settings, setSettings, isAdmin }) {
         </div>
       )}
     </form>
+  )
+}
+
+function SmtpSettingsCard({ settings, setSettings, isAdmin }) {
+  const [form, setForm] = useState({
+    smtp_host: settings.smtp_host, smtp_port: settings.smtp_port, smtp_username: settings.smtp_username,
+    smtp_from_address: settings.smtp_from_address, smtp_use_tls: settings.smtp_use_tls, smtp_password: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [testAddress, setTestAddress] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+
+  function patch(fields) {
+    setForm((f) => ({ ...f, ...fields }))
+  }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const updated = await api.put('/settings', { ...form, smtp_password: form.smtp_password || undefined })
+      setSettings(updated)
+      patch({ smtp_password: '' })
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTest(e) {
+    e.preventDefault()
+    setTesting(true)
+    setTestResult(null)
+    try {
+      await api.post('/settings/test-email', { to_address: testAddress })
+      setTestResult({ ok: true, message: `Sent to ${testAddress} - check the inbox.` })
+    } catch (err) {
+      setTestResult({ ok: false, message: err.message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-5 rounded-xl border border-line bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <Mail size={15} className="text-copper" />
+        <div>
+          <h2 className="text-sm font-semibold text-ink">Outgoing email (SMTP)</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Powers "Forgot password?" on the login screen - without this, that link has no way to
+            actually send a reset email. Any SMTP server works, including a personal Gmail account
+            with an{' '}
+            <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+              app password <ExternalLink size={10} className="inline" />
+            </a>{' '}
+            (not your regular Gmail password) - host <code className="text-ink">smtp.gmail.com</code>, port{' '}
+            <code className="text-ink">587</code>, TLS on.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <Field label="SMTP host">
+              <TextInput disabled={!isAdmin} value={form.smtp_host} onChange={(e) => patch({ smtp_host: e.target.value })} placeholder="smtp.gmail.com" />
+            </Field>
+          </div>
+          <Field label="Port">
+            <TextInput disabled={!isAdmin} value={form.smtp_port} onChange={(e) => patch({ smtp_port: e.target.value })} placeholder="587" />
+          </Field>
+        </div>
+        <Field label="Username" hint="Usually your full email address">
+          <TextInput disabled={!isAdmin} value={form.smtp_username} onChange={(e) => patch({ smtp_username: e.target.value })} />
+        </Field>
+        <Field label="Password" hint={settings.smtp_password_configured ? undefined : 'No password configured yet'}>
+          <div className="flex items-center gap-2">
+            <TextInput
+              disabled={!isAdmin}
+              type="password"
+              value={form.smtp_password}
+              onChange={(e) => patch({ smtp_password: e.target.value })}
+              placeholder={settings.smtp_password_configured ? '••••••••••••  (leave blank to keep current)' : ''}
+            />
+            {settings.smtp_password_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+          </div>
+        </Field>
+        <Field label="From address">
+          <TextInput disabled={!isAdmin} type="email" value={form.smtp_from_address} onChange={(e) => patch({ smtp_from_address: e.target.value })} placeholder="hub@example.com" />
+        </Field>
+        <label className="flex items-center gap-2 text-xs text-ink-muted">
+          <input type="checkbox" disabled={!isAdmin} checked={form.smtp_use_tls} onChange={(e) => patch({ smtp_use_tls: e.target.checked })} className="accent-copper" />
+          Use STARTTLS (on for port 587; turn off for an implicit-TLS port like 465)
+        </label>
+
+        {isAdmin && (
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            {saved && <span className="text-xs text-signal">Saved</span>}
+          </div>
+        )}
+      </form>
+
+      {isAdmin && settings.smtp_configured && (
+        <form onSubmit={handleTest} className="space-y-2 border-t border-line pt-4">
+          <p className="text-xs font-medium text-ink-muted">Send a test email to confirm this actually works</p>
+          <div className="flex items-center gap-2">
+            <TextInput type="email" value={testAddress} onChange={(e) => setTestAddress(e.target.value)} placeholder="you@example.com" />
+            <Button type="submit" variant="secondary" size="sm" disabled={!testAddress || testing}>
+              {testing ? 'Sending…' : 'Send test'}
+            </Button>
+          </div>
+          {testResult && (
+            <p className={`text-xs ${testResult.ok ? 'text-signal' : 'text-danger'}`}>{testResult.message}</p>
+          )}
+        </form>
+      )}
+    </div>
   )
 }
 

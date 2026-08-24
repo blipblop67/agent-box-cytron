@@ -165,6 +165,13 @@ class SettingsOut(BaseModel):
     google_calendar_redirect_uri: str
     web_search_key_configured: bool
     youtube_key_configured: bool
+    smtp_host: str
+    smtp_port: str
+    smtp_username: str
+    smtp_from_address: str
+    smtp_use_tls: bool
+    smtp_password_configured: bool
+    smtp_configured: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -177,6 +184,12 @@ class SettingsUpdate(BaseModel):
     google_client_secret: str | None = None
     web_search_api_key: str | None = None
     youtube_api_key: str | None = None
+    smtp_host: str | None = None
+    smtp_port: str | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_address: str | None = None
+    smtp_use_tls: bool | None = None
 
 
 class ScheduleCreate(BaseModel):
@@ -312,6 +325,7 @@ class AuthUser(BaseModel):
     id: str
     name: str
     role: str
+    email: str | None = None
 
 
 class AuthResponse(BaseModel):
@@ -322,6 +336,23 @@ class AuthResponse(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    name: str
+
+
+class TestEmailRequest(BaseModel):
+    to_address: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class UpdateEmailRequest(BaseModel):
+    email: str | None = None
 
 
 class AdminPasswordResetRequest(BaseModel):
