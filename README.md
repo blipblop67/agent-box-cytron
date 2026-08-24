@@ -91,9 +91,14 @@ message a connected bot and a background job (polling every 3 seconds,
 not a webhook, since a Pi on a home network usually has no stable public
 URL) runs the flow and replies with no one needing to click Run or be near
 the hub, with the same conversation memory Chat already uses so it's a
-real back-and-forth, not one-shot answers. Known gaps are listed at the
-bottom of `backend/README.md` and `frontend/README.md` - mainly: no
-email-based "forgot password" flow (admin reset is the recovery path),
+real back-and-forth, not one-shot answers. Most recently: a `reset_password.py`
+CLI tool for the genuinely-locked-out case (forgot the only admin's
+password) - a local-shell recovery path, not a web endpoint, since anyone
+with shell access to the hub's machine already has full access to the
+database file itself. Known gaps are listed at the bottom of
+`backend/README.md` and `frontend/README.md` - mainly: no email-based,
+self-service "forgot password" flow in the browser (an admin resetting a
+teammate, or the CLI tool for the admin themself, are the recovery paths),
 Gmail/Drive still have no event-based trigger (only Telegram, and only
 time-based Schedules otherwise), conversation history is capped rather
 than summarized, and flows are DAGs without branching logic yet.

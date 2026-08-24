@@ -128,8 +128,7 @@ python3 tests/test_flow_publishing.py   # A published flow is callable with zero
 python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
-python3 tests/test_auth.py       # Register/login/lockout/claim-old-account/password reset & change
-python3 tests/test_personal_settings.py   # Personal Google app / OpenRouter key take priority over hub-wide
+python3 tests/test_reset_password_script.py   # The emergency CLI recovery tool, run as a real subprocess
 ```
 
 ## Team accounts and admin
@@ -411,6 +410,24 @@ A few things worth knowing:
   reset flow. Self-service change is on the Account page
   (`POST /api/auth/change-password`); both invalidate every existing
   session for that user, forcing a fresh login with the new password.
+- **Locked out entirely** (forgot the only admin's password, or the only
+  admin account is otherwise unreachable)? There's no in-browser recovery
+  for this - by design, the same way there's no email-based reset for
+  anyone. From a terminal on the same machine the hub runs on:
+  ```bash
+  cd agent-hub/backend
+  python3 reset_password.py
+  ```
+  Lists every account, asks which one, asks for a new password twice, sets
+  it exactly the way a normal reset would (same hashing, same session
+  invalidation) - nothing hacky, no editing the database by hand. This is
+  a local-shell tool on purpose, not a web endpoint: anyone with shell
+  access to the machine already has full access to the SQLite file itself,
+  so there's no security gained by making this harder to reach - only
+  friction for the actual admin locked out of their own hub.
+  `tests/test_reset_password_script.py` runs this exact script as a real
+  subprocess and confirms the old password stops working and the new one
+  logs in correctly.
 
 ## How a flow actually runs
 
@@ -630,9 +647,12 @@ node, not just a final answer.
 
 ## Not done yet (natural next slices)
 
-- Email-based password reset (an admin resetting a teammate's password from
-  the Team page is the only recovery path right now - no "forgot password"
-  self-service flow, since that needs outbound email the hub doesn't send)
+- Email-based password reset - self-service, in-browser "forgot password"
+  still doesn't exist, since that needs outbound email the hub doesn't
+  send. The recovery paths that do exist: an admin resetting a teammate's
+  password from the Team page, or - if the only admin is the one locked
+  out - `backend/reset_password.py` from a terminal on the hub's own
+  machine (see the Auth section above)
 - Two-factor auth / passkeys - password-only for now
 - Delete-file-from-disk cleanup when a document row is deleted (currently
   leaves the raw upload on disk even after the DB row and vectors are gone)
