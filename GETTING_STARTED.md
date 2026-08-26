@@ -356,6 +356,19 @@ banner switches to telling you the exact address to use, and every future
 Google connection (any service, anyone on the team) just works through
 it — nothing to remember or redo.
 
+**This doesn't put the hub on the public internet.** A DuckDNS name
+points at the hub's ordinary private network address — the same address
+only devices on your own Wi-Fi/LAN could ever reach before. Someone
+outside your network looking up that name gets back an address that
+means nothing on their own network; there's nothing new to reach. Who
+can access the hub stays exactly the same as before setting this up:
+anyone on your network, with a real account and password — DuckDNS just
+gives that same group a name Google will also accept. If you specifically
+want to restrict access to a handful of named devices rather than "anyone
+on this network with a login," [Tailscale](https://tailscale.com) is
+built for that — a separate tool from DuckDNS, worth looking into if
+that's genuinely what you need.
+
 If DuckDNS genuinely isn't an option, a one-time fallback: **do the
 Connect step from a browser on the hub's own machine**, using
 `http://localhost:8811` — Google's other real exception, no domain

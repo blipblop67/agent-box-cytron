@@ -180,6 +180,7 @@ python3 tests/test_sheets.py   # Sheets OAuth, and the upsert behavior a real pr
 python3 tests/test_google_oauth_warning.py   # Warns before Google rejects a .local/raw-IP redirect URI
 python3 tests/test_service_account_impersonation.py   # Domain-wide delegation - real JWT, signature independently verified
 python3 tests/test_dynamic_dns.py   # DuckDNS auto-updates, and survives a simulated IP change unattended
+python3 tests/test_robots_hardening.py   # robots.txt and noindex headers
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_reset_password_script.py   # The emergency CLI recovery tool, run as a real subprocess
@@ -667,6 +668,31 @@ node, not just a final answer.
   Telegram trigger poller) means this can't happen - proven directly in
   `test_dynamic_dns.py` by simulating an IP change and confirming the job
   catches it on its own, not just that the initial save works.
+- **A DuckDNS/Tailscale-style domain doesn't change who can reach this
+  hub - it's worth saying plainly, not just trusting people to reason it
+  through.** The hub's actual IP stays a private, non-routable address
+  either way; a DNS name pointing at a private IP is meaningless to
+  anyone outside the LAN, since their own device would try to reach that
+  address on *their* network, not this one. The DuckDNS Settings card
+  says this directly, in plain language, rather than assuming whoever's
+  reading it already knows how DNS and private IP ranges interact -
+  someone setting this up for the first time has no particular reason to
+  already know that, and "did I just put my hub on the internet" is a
+  reasonable, common worry to have in the moment, not one to leave
+  unaddressed until someone happens to ask. For anyone who wants
+  stricter isolation than "reachable by anyone on this network with a
+  login" (a fair thing to want, distinct from "is this on the public
+  internet"), the same card points at Tailscale by name rather than
+  silently assuming DuckDNS covers every access-control need it doesn't
+  actually address.
+- **`X-Robots-Tag: noindex` on every response, plus a disallow-all
+  `robots.txt`** - cheap, standard hardening for the fact that giving the
+  hub a real DNS name (DuckDNS or otherwise) means a search engine
+  *could* eventually try to crawl it if a network setup ever changed
+  later in a way that made it briefly reachable. Costs nothing for the
+  overwhelming majority of installs where this was never a real risk,
+  and is a normal default for any admin-style tool, not specific to this
+  feature.
 - **Domain-wide delegation is additive, not a replacement for per-user
   OAuth** - a real design decision, not the default choice. Replacing
   OAuth entirely would break the hub for anyone not on Google Workspace

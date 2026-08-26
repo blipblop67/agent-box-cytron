@@ -269,6 +269,18 @@ function DuckDnsSettingsCard({ settings, setSettings, isAdmin }) {
         </p>
       </div>
 
+      <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2.5 text-xs text-ink-muted">
+        <span className="font-medium text-ink">This doesn't put anything on the public internet.</span>{' '}
+        It only gives this hub a name Google will accept - the hub itself is still only reachable by
+        devices on your own network, exactly as before. Nobody gets in without a real account and
+        password either way. If you specifically want to restrict this to a handful of named
+        devices (not just "anyone on this network with a login"),{' '}
+        <a href="https://tailscale.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+          Tailscale
+        </a>{' '}
+        is a good fit for that - a different tool from this card, worth looking into separately.
+      </div>
+
       {settings.duckdns_configured && (
         <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
           <div className="flex items-center gap-2">

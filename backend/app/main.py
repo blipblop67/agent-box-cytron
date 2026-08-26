@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, scheduler
@@ -44,6 +44,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _no_search_indexing(request: Request, call_next):
+    """Anyone who's set up DuckDNS/Tailscale/similar has given this hub a
+    real, public-format DNS name - it's still only reachable from their own
+    network by default, but this is a standard, cheap belt-and-suspenders
+    step: telling any search engine that somehow does reach it (a
+    misconfigured router later, a VPN split wrong, etc.) not to index
+    anything. Costs nothing for the overwhelming majority of installs
+    where this never mattered in the first place."""
+    response = await call_next(request)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(router, prefix="/api")
