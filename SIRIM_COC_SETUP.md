@@ -33,12 +33,11 @@ around this is for him to forward or share access to those emails with an
 account you *do* control — genuinely his call to make, not a setting to
 work around.
 
-One more thing worth checking before you start: **is hairil@cytron.io
-actually a Gmail/Google Workspace address?** If `cytron.io` runs on Google
-Workspace, everything below works normally. If it's Outlook/Exchange or
-something else, Gmail's OAuth won't apply to it at all, and this
-integration can't read that inbox regardless of who logs in — Agent Hub
-only speaks Gmail's API, not generic IMAP.
+Since `cytron.io` is confirmed to be on Google Workspace, everything below
+works normally — and there's one extra option worth reading about before
+you start (see the callout after Part 1.2): Workspace supports a
+completely different mechanism than what's below, and it may or may not
+be what you actually want here.
 
 ---
 
@@ -62,23 +61,60 @@ needed for this specific tracker.)
 ### 1.2 Configure the OAuth consent screen
 
 1. **APIs & Services → OAuth consent screen**.
-2. User type: **External** (unless `cytron.io` is on Google Workspace and
-   you specifically want Internal — External is simpler and works fine
-   either way).
+2. **User type — check what's actually offered here**: since `cytron.io`
+   is on Google Workspace, you may see **Internal** as an option, not just
+   External. This depends on whether `sirim-coc-agent` was created under
+   an `@cytron.io` account that belongs to the organization (not a
+   personal Gmail account) — if so, Google shows Internal as a choice.
+   - **If Internal is available, use it.** It skips the Test Users list
+     entirely (anyone in your Workspace org can connect without being
+     added by name) and skips the scary "unverified app" warning during
+     consent — since an internal app is implicitly trusted within your
+     own organization. If you pick this, **skip step 4 below** — there's
+     no Test Users section for an Internal app.
+   - **If you only see External** (the project isn't tied to the
+     org, or the console doesn't offer Internal for some other reason),
+     that's fine too — follow step 4 below, it works the same as any
+     non-Workspace setup.
 3. Fill in the required fields (app name, support email, developer
    contact) — these are just labels shown on the consent screen, they
    don't need to be anything special.
-4. **This is the step that's easy to miss and breaks everything if
-   skipped**: while the app is in **Testing** mode (the default, and
-   completely fine for a two-person setup like this), Google will
-   silently refuse to let anyone sign in who isn't explicitly listed.
-   Scroll to **Test users** → **Add users** → add **both**:
+4. **Only if you're on External** — this step is easy to miss and breaks
+   everything if skipped: while the app is in **Testing** mode (the
+   default), Google silently refuses to let anyone sign in who isn't
+   explicitly listed. Scroll to **Test users** → **Add users** → add
+   **both**:
    - `hairil@cytron.io`
    - your own Google account, if you also want to connect anything
      personally later
 
    If hairil isn't on this list, his "Connect Gmail" attempt will fail on
    Google's side, before it even gets back to the hub.
+
+### A genuinely different option, since you're on Workspace: domain-wide delegation
+
+Everything above (and everything Agent Hub currently supports) uses
+**per-person OAuth** — hairil personally consents, once, for his own
+inbox. Google Workspace also supports a completely different mechanism
+called **domain-wide delegation**: a Workspace super admin authorizes a
+*service account* in the Admin console to act on behalf of *any* user in
+the domain, for specific scopes, with no per-user consent screen at all.
+
+If that sounds like what you actually want (e.g. hairil would rather not
+personally touch the hub, or you want this to work for whoever holds a
+role in the future without re-doing the OAuth dance each time someone
+changes), it's technically possible — but **Agent Hub doesn't support it
+today**. The current integration is built entirely around the per-user
+consent flow described above; domain-wide delegation is a different
+credential type (a service account JWT, not a client ID/secret + user
+consent) and would be new work, not a setting to flip.
+
+It's also a meaningfully bigger trust decision than what's on this page
+so far: a service account with domain-wide delegation for the Gmail scope
+can read *any* mailbox in your Workspace, not just hairil's — worth
+being deliberate about who'd control that, not something to set up
+casually. If this is genuinely what you want instead of the per-person
+path above, say so and I'll look at what it'd take to add.
 
 ### 1.3 Create the OAuth client
 
@@ -241,9 +277,13 @@ unattended with reasonable confidence.
 
 ## If something doesn't work
 
-- **"Connect Gmail" fails immediately for hairil**: almost always means
-  he isn't listed under Test users on the OAuth consent screen (Part
-  1.2), or the Gmail/Sheets APIs aren't enabled (Part 1.1).
+- **"Connect Gmail" fails immediately for hairil**: if you're on
+  **External**, almost always means he isn't listed under Test users on
+  the OAuth consent screen (Part 1.2). If you're on **Internal**, check
+  that hairil's account is genuinely part of the same Workspace
+  organization as the project — an Internal app rejects anyone outside
+  the org, with no Test Users list to fix it from. Either way, also
+  double check the Gmail/Sheets APIs are actually enabled (Part 1.1).
 - **The tracker runs but finds no emails**: the search query (Part 6) is
   probably too narrow, or too specific to wording that doesn't match how
   these emails are actually worded. Loosen it and check the trace.
