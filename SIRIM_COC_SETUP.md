@@ -1,14 +1,39 @@
 # Setting up the SIRIM CoC Progress Tracker — reading hairil@cytron.io's inbox
 
-## Read this part first — it changes who does what
+## Two ways to do this — read this before picking one
 
-Gmail access in Agent Hub is a personal connection, not something an admin
-can set up on someone else's behalf. When a flow's Email node runs, it
-acts as whoever is actually running the flow at that moment — there is no
-"connect Gmail for hairil" button you can click yourself, because Google's
-OAuth consent screen requires **hairil to personally log in and click
-Allow**. Nobody else can do that step for him, including a hub admin —
-that's a deliberate, good security property, not a missing feature.
+Gmail access in Agent Hub normally works as a **personal connection**:
+whoever runs a flow, it acts as their own Google account. There's no
+"connect Gmail for hairil" button anyone else can click *for* him under
+this model — Google's OAuth consent screen requires **hairil personally**
+to log in and click Allow. Nobody else can do that step, including a hub
+admin — a deliberate, good security property.
+
+Since you've since confirmed `cytron.io` is Google Workspace, there's now
+a **second, completely different way** that avoids needing hairil to
+personally do anything at all: **domain-wide delegation**. A Workspace
+super admin authorizes one service account, once, in the Workspace Admin
+Console, to act as anyone in the organization for chosen Google scopes.
+From then on, a flow's Email/Sheets node can target `hairil@cytron.io`
+directly via an "Impersonate" field - no consent screen, no redirect URI,
+and no OAuth involved at all for that node.
+
+**Given what you've already run into** (the `.local` redirect rejection,
+then the private-IP "device_id" error) **domain-wide delegation is
+probably the smoother path forward from here** - it sidesteps both of
+those entirely, since there's no browser redirect for Google to reject in
+the first place. It needs one thing the personal-OAuth path doesn't:
+**Workspace super admin access** to `cytron.io`'s Admin Console (not just
+a Google Cloud Console project) to actually authorize the delegation. If
+you have that, skip to **Path B** below. If you don't (and can't easily
+get someone who does to spend five minutes on it), **Path A** - the
+personal OAuth walkthrough - still works fine; you'd just need to
+actually finish switching to a real domain (DuckDNS or similar) first, per
+the earlier conversation.
+
+---
+
+# Path A — personal OAuth (hairil connects his own account)
 
 This has one direct, unavoidable consequence for your setup: **the flow
 has to run *as hairil* for it to search hairil's inbox.** And since a
@@ -28,16 +53,9 @@ So the work splits like this:
 | Creating the tracker spreadsheet (one-time) | **Hairil**, since it runs as him |
 | Setting up the Schedule | **Hairil**, since a schedule runs as whoever created it |
 
-If hairil would rather not personally touch the hub at all, the only way
-around this is for him to forward or share access to those emails with an
-account you *do* control — genuinely his call to make, not a setting to
-work around.
-
-Since `cytron.io` is confirmed to be on Google Workspace, everything below
-works normally — and there's one extra option worth reading about before
-you start (see the callout after Part 1.2): Workspace supports a
-completely different mechanism than what's below, and it may or may not
-be what you actually want here.
+If hairil would rather not personally touch the hub at all, **Path B**
+below (domain-wide delegation) is exactly that alternative - built and
+ready to use, not a hypothetical.
 
 ---
 
@@ -91,30 +109,15 @@ needed for this specific tracker.)
    If hairil isn't on this list, his "Connect Gmail" attempt will fail on
    Google's side, before it even gets back to the hub.
 
-### A genuinely different option, since you're on Workspace: domain-wide delegation
+### A note on domain-wide delegation, since you're on Workspace
 
-Everything above (and everything Agent Hub currently supports) uses
-**per-person OAuth** — hairil personally consents, once, for his own
-inbox. Google Workspace also supports a completely different mechanism
-called **domain-wide delegation**: a Workspace super admin authorizes a
-*service account* in the Admin console to act on behalf of *any* user in
-the domain, for specific scopes, with no per-user consent screen at all.
-
-If that sounds like what you actually want (e.g. hairil would rather not
-personally touch the hub, or you want this to work for whoever holds a
-role in the future without re-doing the OAuth dance each time someone
-changes), it's technically possible — but **Agent Hub doesn't support it
-today**. The current integration is built entirely around the per-user
-consent flow described above; domain-wide delegation is a different
-credential type (a service account JWT, not a client ID/secret + user
-consent) and would be new work, not a setting to flip.
-
-It's also a meaningfully bigger trust decision than what's on this page
-so far: a service account with domain-wide delegation for the Gmail scope
-can read *any* mailbox in your Workspace, not just hairil's — worth
-being deliberate about who'd control that, not something to set up
-casually. If this is genuinely what you want instead of the per-person
-path above, say so and I'll look at what it'd take to add.
+Since `cytron.io` is Google Workspace, there's a second way to do all of
+this that skips OAuth (and everything below about Test Users/Internal
+apps/redirect URIs) entirely: **domain-wide delegation** — see **Path B**
+at the end of this document. It needs Workspace super admin access to set
+up, but once it's done, hairil never has to personally connect anything.
+Worth reading before continuing further down this OAuth path, especially
+if you've already hit friction with redirect URIs.
 
 ### 1.3 Create the OAuth client
 
@@ -319,3 +322,106 @@ unattended with reasonable confidence.
 - **The schedule doesn't seem to be running**: open the Schedule modal and
   check it's toggled on (enabled), and look at its run history for
   errors.
+
+---
+
+# Path B — domain-wide delegation (no OAuth, hairil does nothing)
+
+The genuinely different part of this path: **one person (you, or whoever
+has Workspace super admin rights) does the entire setup alone.** Hairil
+never logs into the hub, never sees a consent screen, never does
+anything. The flow acts as him through the service account, on every
+node that has his address in its "Impersonate" field.
+
+## B1 — Google Cloud Console (your `sirim-coc-agent` project)
+
+1. Make sure **Gmail API** and **Google Sheets API** are enabled (APIs &
+   Services → Library → search each → Enable) - same as Part 1.1 in Path
+   A, if you already did that, nothing more to do here.
+2. **IAM & Admin → Service Accounts → Create Service Account.** Call it
+   something clear, e.g. `sirim-coc-tracker`. No roles needed on this
+   screen - skip that step.
+3. Open the new service account → **Keys → Add Key → Create new key →
+   JSON**. This downloads a file - it's the only copy of the private key,
+   keep it safe until step B3.
+4. On the same service account page, copy its **Unique ID** (a long
+   number, sometimes labeled "OAuth2 Client ID") - needed for the next
+   step.
+
+## B2 — Google Workspace Admin Console (needs a super admin)
+
+This is a **different website** from Cloud Console -
+[admin.google.com](https://admin.google.com), and needs someone with
+Workspace super admin rights specifically, not just any `@cytron.io`
+account.
+
+1. **Security → Access and data control → API controls → Domain-wide
+   delegation → Add new.**
+2. **Client ID**: paste the Unique ID from B1.4.
+3. **OAuth scopes**, comma-separated - only what this tracker actually
+   needs:
+   ```
+   https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/spreadsheets
+   ```
+4. **Authorize.** This is the step that actually grants it - skipping it
+   is the most common reason impersonation fails later with an
+   "unauthorized_client" error.
+
+## B3 — Agent Hub Settings page (admin)
+
+1. Open **Settings** → **Google service account (domain-wide
+   delegation)**.
+2. Paste the entire contents of the JSON file from B1.3 → **Save**. The
+   card should now show "Configured" with the service account's own
+   email address.
+3. Use **Test impersonation** right there: enter `hairil@cytron.io`,
+   scope "Gmail", click **Test**. Confirm it succeeds before moving on -
+   if it fails, the error names the likely cause (scopes not authorized
+   in B2, wrong Client ID, or `hairil@cytron.io` not actually part of
+   this Workspace).
+
+## B4 — Build the flow (you do this whole part alone)
+
+1. Open **Flows** → **"SIRIM CoC Progress Tracker"** template.
+2. Click the **Email** node → set **Impersonate** to `hairil@cytron.io`.
+3. Click the **Sheets** node → set **Impersonate** to `hairil@cytron.io`
+   as well (the Sheets node's own auth is independent of the Email
+   node's, so both need it set).
+
+## B5 — One-time: create the tracker spreadsheet
+
+Same idea as Path A, but you can do this step yourself now - the sheet
+still ends up in **hairil's** Drive, because the node is impersonating
+him, regardless of who clicks Run.
+
+1. Click the Sheets node, switch **Action** to "Create a new
+   spreadsheet." Confirm **Impersonate** is still set to
+   `hairil@cytron.io`.
+2. Title: "SIRIM CoC Tracker". Headers: `Application ID, Status, Notes`.
+3. Run the flow once, copy the returned spreadsheet ID from the trace.
+4. Switch the Sheets node back to "Update a row," paste the ID into
+   **Spreadsheet ID**, keep **Impersonate** set. **Save.**
+
+## B6 — Adjust the search query, set up the Schedule
+
+Same as Path A's Part 6 and Part 7 - except **you** can do the Schedule
+step too now, since the flow's Google access comes from impersonation on
+the nodes, not from whoever owns the schedule. Click **Schedule** → **Add
+schedule** → pick an interval → **Create schedule**. Nothing about this
+step needs to involve hairil.
+
+## B troubleshooting
+
+- **"unauthorized_client" or "access_denied" when testing
+  impersonation**: domain-wide delegation wasn't actually authorized in
+  B2, or the scopes there don't match what's being requested, or the
+  Client ID doesn't match this exact service account. Re-check B2 - this
+  is the single most common failure point.
+- **Impersonation test succeeds but the real flow still fails**: check
+  that *both* the Email node's and Sheets node's Impersonate fields are
+  set - they're independent per node, not a flow-wide setting.
+- **Wrong tracker sheet, or one appears in the wrong Drive**: whichever
+  address is in the Sheets node's Impersonate field at the moment you run
+  the "Create" action is whose Drive it lands in - double check it says
+  `hairil@cytron.io`, not your own address, before running Create.
+

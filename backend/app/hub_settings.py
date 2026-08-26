@@ -13,7 +13,7 @@ with however someone happens to be reached (hostname, IP, port). The
 Settings page shows the computed values so there's something exact to
 paste into Google Cloud Console.
 """
-from . import config, crypto_vault, db
+from . import config, crypto_vault, db, service_account_auth
 
 DEFAULTS = {
     "llm_provider": "openrouter",         # "openrouter" | "ollama"
@@ -48,6 +48,16 @@ def get_settings() -> dict:
     settings["smtp_use_tls"] = settings["smtp_use_tls"] == "true"
     settings["smtp_password_configured"] = db.get_setting("smtp_password_encrypted") is not None
     settings["smtp_configured"] = bool(settings["smtp_host"] and settings["smtp_from_address"])
+    stored_key = db.get_setting("google_service_account_key_encrypted")
+    settings["google_service_account_configured"] = stored_key is not None
+    settings["google_service_account_email"] = ""
+    if stored_key:
+        try:
+            settings["google_service_account_email"] = service_account_auth.parse_key(
+                crypto_vault.decrypt(stored_key.encode())
+            )["client_email"]
+        except service_account_auth.ServiceAccountError:
+            pass  # a corrupted stored key shouldn't crash the settings page - just shows blank
     return settings
 
 
@@ -58,7 +68,7 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
                      youtube_api_key: str | None = None, smtp_host: str | None = None,
                      smtp_port: str | None = None, smtp_username: str | None = None,
                      smtp_password: str | None = None, smtp_from_address: str | None = None,
-                     smtp_use_tls: bool | None = None) -> None:
+                     smtp_use_tls: bool | None = None, google_service_account_key: str | None = None) -> None:
     if llm_provider is not None:
         db.set_setting("llm_provider", llm_provider)
     if openrouter_model is not None:
@@ -89,6 +99,9 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
         db.set_setting("smtp_use_tls", "true" if smtp_use_tls else "false")
     if smtp_password:  # only overwrite if a new one was actually provided
         db.set_setting("smtp_password_encrypted", crypto_vault.encrypt(smtp_password).decode())
+    if google_service_account_key:  # only overwrite if a new one was actually provided
+        service_account_auth.parse_key(google_service_account_key)  # raises a clear error before storing garbage
+        db.set_setting("google_service_account_key_encrypted", crypto_vault.encrypt(google_service_account_key).decode())
 
 
 def get_openrouter_api_key() -> str | None:
@@ -136,3 +149,13 @@ def get_smtp_settings() -> dict:
         "use_tls": settings["smtp_use_tls"],
         "configured": settings["smtp_configured"],
     }
+
+
+def get_service_account_key() -> dict | None:
+    """The parsed key dict service_account_auth.py needs, or None if
+    nothing's configured yet. Callers should catch ServiceAccountError
+    separately for a corrupted key - this only handles "not set up"."""
+    stored = db.get_setting("google_service_account_key_encrypted")
+    if stored is None:
+        return None
+    return service_account_auth.parse_key(crypto_vault.decrypt(stored.encode()))

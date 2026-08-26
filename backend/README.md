@@ -85,6 +85,18 @@ Drive tool integrations. Pairs with the React frontend in
   check. A single run can update several rows at once (one per line of the
   previous node's output), since one email check will often touch more
   than one thing being tracked (`app/sheets_client.py`)
+- **Domain-wide delegation** (Google Workspace only) — a second, optional
+  way for an Email/Drive/Calendar/Sheets node to act as a specific
+  person, without that person ever clicking Connect. A Workspace super
+  admin authorizes one service account, once, to impersonate anyone in
+  the organization for chosen scopes; from then on, any node's
+  **Impersonate** field can target that address directly. Genuinely
+  different from personal OAuth, not a variant of it - no browser
+  redirect at all, so it sidesteps Google's redirect-URI restrictions
+  entirely (see the callout above) and works from a `.local`/LAN-IP-only
+  hub without a workaround. A bigger trust decision than a personal
+  connection (one credential, many mailboxes), so it's admin-only to set
+  up (`app/service_account_auth.py`)
 - **Telegram** — named bots (shared or private, same model as knowledge
   bases), not one connection per person: create as many as you want (just a
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
@@ -155,6 +167,8 @@ python3 tests/test_telegram_triggers.py   # Message a bot, get an auto-reply wit
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
 python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
 python3 tests/test_sheets.py   # Sheets OAuth, and the upsert behavior a real progress tracker needs
+python3 tests/test_google_oauth_warning.py   # Warns before Google rejects a .local/raw-IP redirect URI
+python3 tests/test_service_account_impersonation.py   # Domain-wide delegation - real JWT, signature independently verified
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_reset_password_script.py   # The emergency CLI recovery tool, run as a real subprocess
@@ -266,6 +280,82 @@ after. Two ways forward:
   name or IP - Google's one real exception, no domain needed. (An SSH
   local port-forward - `ssh -L 8811:localhost:8811 you@pi` - lets you do
   this from your own laptop without physically sitting at the Pi.)
+
+### Setting up domain-wide delegation (Google Workspace only, optional)
+
+Everything above is per-person OAuth: each team member clicks Connect and
+grants access to their own Google account. That has a hard limit -
+Google's OAuth client will only ever redirect to `localhost`/`127.0.0.1`
+or a real public domain, so it can't reach a hub that's only accessible
+by `.local` name or a raw LAN IP (see the callout above), and it always
+needs the actual account owner to personally click Allow.
+
+**Domain-wide delegation is a different mechanism for Google Workspace
+domains specifically**, that sidesteps both of those: a Workspace super
+admin authorizes one service account, once, in the Admin Console (not
+Cloud Console), to act as *any* user in the organization for specific
+Google scopes. From then on, an Email/Drive/Calendar/Sheets node's
+**Impersonate** field can target any address in your Workspace directly -
+no browser redirect, no per-person consent, and nothing for Google's
+redirect-URI rules to reject, since there's no redirect involved at all.
+
+This is a genuinely bigger trust decision than a personal connection -
+one credential that can act as anyone in the domain, for whatever's been
+granted - so it's admin-only to configure, and worth treating the key
+file the same way you'd treat any other admin-level secret.
+
+**Setup, in order** (the two consoles below are different products -
+mixing up which one you're in is the most common way this goes wrong):
+
+1. **In Google Cloud Console** (the same `sirim-coc-agent`-style project
+   used for OAuth, or a fresh one - doesn't matter which):
+   - Enable whichever of Gmail API / Drive API / Calendar API / Sheets API
+     you actually need (IAM & Admin doesn't require all four).
+   - **IAM & Admin → Service Accounts → Create Service Account.** Name it
+     whatever's clear (e.g. "agent-hub-delegation"). No roles need to be
+     granted here - domain-wide delegation is authorized separately, in
+     the Workspace Admin Console, not through IAM roles.
+   - Open the new service account → **Keys → Add Key → Create new key →
+     JSON**. This downloads a `.json` file - this is the *only* copy of
+     the private key; Google doesn't keep a spare. Keep it somewhere
+     safe until it's pasted into the hub.
+   - Still on the service account's detail page, copy its **Unique ID** (a
+     long number, sometimes labeled "OAuth2 Client ID" - not the same as
+     the `client_email` in the JSON file). The next step needs this exact
+     number.
+2. **In the Google Workspace Admin Console** (`admin.google.com` - needs a
+   super admin, not just any Workspace user):
+   - **Security → Access and data control → API controls → Domain-wide
+     delegation → Add new**.
+   - **Client ID**: paste the Unique ID copied above.
+   - **OAuth scopes**: a comma-separated list of exactly the scopes you
+     want this service account able to use. Only add what you actually
+     need:
+     | Node | Scope |
+     |---|---|
+     | Email | `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify` |
+     | Drive | `https://www.googleapis.com/auth/drive` |
+     | Calendar | `https://www.googleapis.com/auth/calendar` |
+     | Sheets | `https://www.googleapis.com/auth/spreadsheets` |
+   - **Authorize**. This is the step that actually grants the delegation -
+     without it, the service account exists but every impersonation
+     attempt fails with a clear "domain-wide delegation not authorized"
+     error (`app/service_account_auth.py` surfaces this specifically,
+     rather than a generic auth failure, since it's such a common thing
+     to skip or get slightly wrong).
+3. **Back in the hub**: Settings → **Google service account (domain-wide
+   delegation)** → paste the entire contents of the JSON key file → Save.
+   Then use **Test impersonation** right there on the same card - enter
+   the Workspace address you actually want to act as (e.g.
+   `hairil@cytron.io`) and confirm it works *before* wiring it into a real
+   flow. If it fails, the error names the likely cause (scopes not
+   authorized, wrong Client ID, the target address not actually in this
+   Workspace) rather than a generic 403.
+4. **On any Email/Drive/Calendar/Sheets node**, fill in the **Impersonate**
+   field (only visible once step 3 is done) with the Workspace address to
+   act as. Leave it blank on any node that should keep using the person
+   running the flow's own personal connection instead - the two models
+   coexist per-node, not hub-wide.
 
 ### Setting up Telegram (no cloud console needed)
 
@@ -542,6 +632,36 @@ is that someone learning the system can see exactly what happened at each
 node, not just a final answer.
 
 ## Design notes / why it's built this way
+
+- **Domain-wide delegation is additive, not a replacement for per-user
+  OAuth** - a real design decision, not the default choice. Replacing
+  OAuth entirely would break the hub for anyone not on Google Workspace
+  (personal Gmail accounts can't use domain-wide delegation at all - it's
+  a Workspace-only mechanism), so both live side by side: an
+  **Impersonate** field on a node, left blank, behaves exactly as before
+  this existed; filled in, it switches that one node to service-account
+  auth for that one call. The two models are genuinely different things
+  (see `service_account_auth.py`'s docstring) sharing the same client
+  modules (`gmail_client.py`/`drive_client.py`/`calendar_client.py`/
+  `sheets_client.py` each just branch in `_headers()` on whether
+  `impersonate` was passed), not one flow with a toggle.
+- **Hand-rolled RS256 JWT signing, not `google-auth`.** Consistent with
+  every other Google integration in this codebase (plain httpx REST calls
+  instead of the official SDKs) - a service account token exchange is
+  header + claims + one RSA signature + one POST, and `cryptography`
+  (already a dependency, used for the encryption vault) has everything
+  needed. Verified this produces genuinely valid tokens, not just
+  plausible-looking ones, by decoding a real signed JWT in testing and
+  checking the signature against the public key directly - independent
+  proof it's spec-correct, not just "the mocked HTTP call accepted it."
+- **`google_oauth_warning_for` looks for `.local` names and raw IPs
+  before Google gets a chance to reject them.** Found via a real user
+  hitting Google's actual error screen - `google_oauth.py`'s docstring
+  had claimed "no public domain needed" right up until that happened.
+  Now the Settings/Account pages warn before anyone pastes a doomed URI
+  into Google Cloud Console, and the fix (a domain, even a free
+  dynamic-DNS one pointed at a private IP, or a localhost tunnel) is
+  stated directly in the warning rather than left as a mystery error.
 
 - **Sheets is a real API integration, not a bigger Drive node.** Drive
   treats a file as an opaque blob - creating one works fine, but "editing"

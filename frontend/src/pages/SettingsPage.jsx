@@ -40,6 +40,7 @@ export default function SettingsPage() {
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <SmtpSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <ServiceAccountCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <UpdatesCard isAdmin={isAdmin} />
     </div>
   )
@@ -440,6 +441,121 @@ function SmtpSettingsCard({ settings, setSettings, isAdmin }) {
             <TextInput type="email" value={testAddress} onChange={(e) => setTestAddress(e.target.value)} placeholder="you@example.com" />
             <Button type="submit" variant="secondary" size="sm" disabled={!testAddress || testing}>
               {testing ? 'Sending…' : 'Send test'}
+            </Button>
+          </div>
+          {testResult && (
+            <p className={`text-xs ${testResult.ok ? 'text-signal' : 'text-danger'}`}>{testResult.message}</p>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}
+
+function ServiceAccountCard({ settings, setSettings, isAdmin }) {
+  const [keyText, setKeyText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [testEmail, setTestEmail] = useState('')
+  const [testScope, setTestScope] = useState('gmail')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const updated = await api.put('/settings', { google_service_account_key: keyText })
+      setSettings(updated)
+      setKeyText('')
+      setSaved(true)
+    } catch (err) {
+      setSaveError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTest(e) {
+    e.preventDefault()
+    setTesting(true)
+    setTestResult(null)
+    try {
+      await api.post('/settings/test-impersonation', { impersonate: testEmail, scope: testScope })
+      setTestResult({ ok: true, message: `Success - this service account can act as ${testEmail} for ${testScope}.` })
+    } catch (err) {
+      setTestResult({ ok: false, message: err.message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold text-ink">Google service account (domain-wide delegation)</h2>
+        <p className="mt-1 text-xs text-ink-muted">
+          A different way for a flow to act as a specific Google Workspace person - one that skips
+          the "connect your Gmail" consent flow entirely. Instead of each person clicking Connect,
+          a Workspace super admin authorizes this one service account, in the Admin Console, to act
+          as anyone in your organization for specific Google services. Once set up, an Email,
+          Drive, Calendar, or Sheets node's "Impersonate" field can target any address in your
+          Workspace directly. This is a bigger trust decision than a personal connection - this one
+          credential can act as anyone in your domain, for whatever's been authorized - so treat the
+          key file the same way you'd treat any admin credential.
+        </p>
+      </div>
+
+      {settings.google_service_account_configured && (
+        <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
+          <CircleCheck size={13} className="text-signal" />
+          <span className="text-ink-muted">Configured - </span>
+          <code className="text-ink">{settings.google_service_account_email}</code>
+        </div>
+      )}
+
+      {isAdmin && (
+        <form onSubmit={handleSave} className="space-y-2">
+          <Field
+            label="Service account JSON key"
+            hint='From Google Cloud Console → IAM & Admin → Service Accounts → Keys → Add Key → JSON. Paste the whole file contents.'
+          >
+            <textarea
+              value={keyText}
+              onChange={(e) => setKeyText(e.target.value)}
+              placeholder={settings.google_service_account_configured ? '{ "type": "service_account", ... }  (leave blank to keep current key)' : '{ "type": "service_account", ... }'}
+              rows={4}
+              className="w-full rounded-md border border-line-strong bg-bg px-3 py-2 font-mono text-xs text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-copper"
+            />
+          </Field>
+          {saveError && <p className="text-xs text-danger">{saveError}</p>}
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={!keyText || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            {saved && <span className="text-xs text-signal">Saved</span>}
+          </div>
+        </form>
+      )}
+
+      {isAdmin && settings.google_service_account_configured && (
+        <form onSubmit={handleTest} className="space-y-2 border-t border-line pt-4">
+          <p className="text-xs font-medium text-ink-muted">
+            Confirm domain-wide delegation actually works before relying on it in a real flow
+          </p>
+          <div className="flex items-center gap-2">
+            <TextInput
+              type="email"
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="hairil@cytron.io"
+            />
+            <Select value={testScope} onChange={(e) => setTestScope(e.target.value)} className="w-32">
+              <option value="gmail">Gmail</option>
+              <option value="sheets">Sheets</option>
+            </Select>
+            <Button type="submit" variant="secondary" size="sm" disabled={!testEmail || testing}>
+              {testing ? 'Testing…' : 'Test'}
             </Button>
           </div>
           {testResult && (

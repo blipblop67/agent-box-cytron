@@ -171,6 +171,21 @@ function YouTubeFields({ data, patch }) {
   )
 }
 
+function ImpersonateField({ data, patch }) {
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
+  if (!serviceAccountConfigured) return null
+  return (
+    <Field label="Impersonate (optional)" hint="Acts as this Workspace address via the service account, instead of your own connection">
+      <TextInput
+        type="email"
+        value={data.impersonate || ''}
+        onChange={(e) => patch({ impersonate: e.target.value })}
+        placeholder="hairil@cytron.io"
+      />
+    </Field>
+  )
+}
+
 function EmailFields({ data, patch }) {
   const gmail = useCatalogStore((s) => s.gmail)
   return (
@@ -208,6 +223,7 @@ function EmailFields({ data, patch }) {
           </Field>
         </>
       )}
+      <ImpersonateField data={data} patch={patch} />
     </>
   )
 }
@@ -302,6 +318,7 @@ function DriveFields({ data, patch }) {
           </Field>
         </>
       )}
+      <ImpersonateField data={data} patch={patch} />
     </>
   )
 }
@@ -354,6 +371,7 @@ function CalendarFields({ data, patch }) {
           </Field>
         </>
       )}
+      <ImpersonateField data={data} patch={patch} />
     </>
   )
 }
@@ -407,6 +425,7 @@ function SheetsFields({ data, patch }) {
           )}
         </>
       )}
+      <ImpersonateField data={data} patch={patch} />
     </>
   )
 }

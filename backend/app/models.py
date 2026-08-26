@@ -165,6 +165,8 @@ class SettingsOut(BaseModel):
     google_calendar_redirect_uri: str
     google_sheets_redirect_uri: str
     google_oauth_redirect_warning: str | None
+    google_service_account_configured: bool
+    google_service_account_email: str
     web_search_key_configured: bool
     youtube_key_configured: bool
     smtp_host: str
@@ -192,6 +194,12 @@ class SettingsUpdate(BaseModel):
     smtp_password: str | None = None
     smtp_from_address: str | None = None
     smtp_use_tls: bool | None = None
+    google_service_account_key: str | None = None
+
+
+class TestImpersonationRequest(BaseModel):
+    impersonate: str
+    scope: str = "gmail"  # "gmail" | "sheets" | "drive" | "calendar"
 
 
 class ScheduleCreate(BaseModel):
