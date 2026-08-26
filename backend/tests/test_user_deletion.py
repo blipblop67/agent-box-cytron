@@ -107,7 +107,17 @@ def main():
     auth_headers(client, "Jordan")
     client.patch("/api/users/jordan/role?role=admin", headers=priya_headers)
     assert _would_remove_last_admin("priya", "admin") is False  # jordan is also admin now, so this is safe
-    print("[ok] the zero-admins guard itself is correct, independent of the two checks that make it unreachable today")
+    print("[ok] the zero-admins guard itself is correct")
+
+    # --- demoting the last admin is blocked too, not just deleting them - both paths
+    # to zero admins use the same guard now ---
+    client.patch("/api/users/jordan/role?role=member", headers=priya_headers)  # back to one admin: priya
+    demote_last_admin = client.patch("/api/users/priya/role?role=member", headers=priya_headers)
+    assert demote_last_admin.status_code == 400
+    assert "only admin" in demote_last_admin.text
+    still_admin = [u for u in client.get("/api/users", headers=priya_headers).json() if u["id"] == "priya"][0]
+    assert still_admin["role"] == "admin"  # unchanged
+    print("[ok] demoting the only admin is blocked the same way deleting them is")
 
     print("\nAll user-deletion smoke tests passed.")
 

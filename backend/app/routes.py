@@ -66,8 +66,11 @@ def set_role(user_id: str, role: str, admin: dict = Depends(get_current_user)):
         raise HTTPException(403, "Only a hub admin can change roles")
     if role not in ("admin", "member"):
         raise HTTPException(400, "role must be 'admin' or 'member'")
-    if db.get_user(user_id) is None:
+    target = db.get_user(user_id)
+    if target is None:
         raise HTTPException(404, "No such user")
+    if role == "member" and _would_remove_last_admin(user_id, target["role"]):
+        raise HTTPException(400, "Can't remove the only admin - promote someone else first")
     db.set_user_role(user_id, role)
     return {"id": user_id, "role": role}
 

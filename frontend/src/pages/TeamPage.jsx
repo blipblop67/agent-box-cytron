@@ -11,6 +11,7 @@ export default function TeamPage() {
   const [members, setMembers] = useState(null)
   const [resetTarget, setResetTarget] = useState(null)
   const [removeTarget, setRemoveTarget] = useState(null)
+  const [roleError, setRoleError] = useState(null)
   const currentUser = useUserStore((s) => s.user)
 
   async function refresh() {
@@ -22,15 +23,21 @@ export default function TeamPage() {
   }, [])
 
   async function toggleRole(member) {
+    setRoleError(null)
     const nextRole = member.role === 'admin' ? 'member' : 'admin'
-    await api.patch(`/users/${member.id}/role?role=${nextRole}`)
-    refresh()
+    try {
+      await api.patch(`/users/${member.id}/role?role=${nextRole}`)
+      refresh()
+    } catch (err) {
+      setRoleError(err.message)
+    }
   }
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-lg font-semibold text-ink">Team</h1>
       <p className="mt-1 text-sm text-ink-muted">Everyone who's registered on this hub. Admins can see private knowledge bases and flows, manage hub settings, reset a teammate's password, and remove someone.</p>
+      {roleError && <p className="mt-2 text-xs text-danger">{roleError}</p>}
 
       <div className="mt-6 overflow-hidden rounded-xl border border-line">
         {members?.map((member, i) => (
