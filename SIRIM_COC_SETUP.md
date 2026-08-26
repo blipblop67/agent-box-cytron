@@ -27,9 +27,10 @@ the first place. It needs one thing the personal-OAuth path doesn't:
 a Google Cloud Console project) to actually authorize the delegation. If
 you have that, skip to **Path B** below. If you don't (and can't easily
 get someone who does to spend five minutes on it), **Path A** - the
-personal OAuth walkthrough - still works fine; you'd just need to
-actually finish switching to a real domain (DuckDNS or similar) first, per
-the earlier conversation.
+personal OAuth walkthrough - still works fine, and is genuinely easy now:
+Settings has a built-in **DuckDNS** card that gets you a working domain
+in about two minutes, with nothing to maintain afterward (see the callout
+in Part 2 below).
 
 ---
 
@@ -141,15 +142,27 @@ if you've already hit friction with redirect URIs.
    be rejected by Google's OAuth client with a confusing error ("must use
    a domain that is a valid top private domain") no matter how carefully
    you copy it in. This isn't specific to the SIRIM setup; it's a hard
-   Google requirement. Two fixes, either is fine:
-   - Get a free [DuckDNS](https://www.duckdns.org) name pointed at the
-     hub's LAN IP, and do the rest of this setup through that address
-     instead of the `.local` name or IP.
-   - Do this one step (and the Connect steps in Part 4) from a browser on
-     the same machine the hub runs on, using `http://localhost:8811`
-     instead — Google's real exception, no domain needed. An SSH local
-     port-forward (`ssh -L 8811:localhost:8811 you@pi`) lets you do this
-     from your own laptop.
+   Google requirement.
+
+   **The fix**: scroll down to the **Free remote domain (DuckDNS)** card
+   on this same Settings page. Get a free token at
+   [duckdns.org](https://www.duckdns.org) (sign in with an existing
+   Google/GitHub account), pick a subdomain (e.g. `sirim-agenthub`),
+   paste both in, and save. The hub then keeps that domain pointed at
+   itself automatically from here on - checking every few minutes in the
+   background, so it keeps working even after a reboot changes the Pi's
+   IP. Once it's set, reload this Settings page: the warning above
+   switches to telling you the exact new address (something like
+   `http://sirim-agenthub.duckdns.org:8811`) - use *that* address for the
+   rest of this setup, including hairil's Connect steps in Part 4.
+
+   If you genuinely can't use DuckDNS, a one-time-only fallback still
+   works: do this step (and the Connect steps in Part 4) from a browser
+   on the same machine the hub runs on, using `http://localhost:8811`
+   instead — Google's other real exception, no domain needed. An SSH
+   local port-forward (`ssh -L 8811:localhost:8811 you@pi`) lets you do
+   this from your own laptop. This only covers the Connect step though,
+   not day-to-day use of the hub.
 
    If there's no warning, you're already reaching the hub through
    something Google will accept — carry on to step 4.

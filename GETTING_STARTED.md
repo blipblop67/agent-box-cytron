@@ -344,16 +344,26 @@ setup will ever accept, and it produces a genuinely confusing error
 ("must use a domain that is a valid top private domain") that gives no
 hint why. The Settings and Account pages detect this automatically and
 warn you before you waste a trip through Google Cloud Console over it.
-Two fixes:
-- **Free dynamic DNS** (e.g. [DuckDNS](https://www.duckdns.org)) pointed
-  at the hub's LAN IP — solves it permanently, works for anyone on your
-  network, and satisfies Google's check since it's validating the string
-  format of the domain, not that it's reachable from the public internet.
-- **Do the Connect step once from a browser on the hub's own machine**,
-  using `http://localhost:8811` — Google's genuine loopback exception, no
-  domain needed. From another machine, an SSH local port-forward
-  (`ssh -L 8811:localhost:8811 you@pi`) gets you there without physically
-  sitting at the Pi.
+
+**The fix — Settings → "Free remote domain (DuckDNS)"**: a free account
+at [duckdns.org](https://www.duckdns.org) (sign in with an existing
+Google/GitHub account, no email needed) gets you a token; pick any
+subdomain, paste both into that card, and the hub takes care of the rest
+— it keeps that domain pointed at itself automatically from then on,
+checking every few minutes in the background, so it keeps working even
+if the Pi's IP ever changes after a reboot. Once it's set up, the warning
+banner switches to telling you the exact address to use, and every future
+Google connection (any service, anyone on the team) just works through
+it — nothing to remember or redo.
+
+If DuckDNS genuinely isn't an option, a one-time fallback: **do the
+Connect step from a browser on the hub's own machine**, using
+`http://localhost:8811` — Google's other real exception, no domain
+needed. From another machine, an SSH local port-forward
+(`ssh -L 8811:localhost:8811 you@pi`) gets you there without physically
+sitting at the Pi. This only covers that one Connect click though, so
+it's worth setting up DuckDNS instead if more than a couple of
+connections are ever expected.
 
 ### Setting up Telegram bots
 

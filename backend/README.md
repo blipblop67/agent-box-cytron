@@ -97,6 +97,16 @@ Drive tool integrations. Pairs with the React frontend in
   hub without a workaround. A bigger trust decision than a personal
   connection (one credential, many mailboxes), so it's admin-only to set
   up (`app/service_account_auth.py`)
+- **Built-in dynamic DNS (DuckDNS)** — the actual fix for Google's
+  redirect-URI restrictions, not a manual one-time workaround: paste a
+  free DuckDNS token and subdomain into Settings, and the hub keeps that
+  domain pointed at itself automatically from then on, checking every 5
+  minutes in the background - including recovering on its own if the
+  LAN IP ever changes after a reboot, the same failure mode that would
+  otherwise silently break a manually-configured dynamic DNS setup. The
+  redirect-URI warning banner detects this and switches from generic
+  advice to naming the exact address to use once it's set up
+  (`app/dynamic_dns.py`)
 - **Telegram** — named bots (shared or private, same model as knowledge
   bases), not one connection per person: create as many as you want (just a
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
@@ -169,6 +179,7 @@ python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and 
 python3 tests/test_sheets.py   # Sheets OAuth, and the upsert behavior a real progress tracker needs
 python3 tests/test_google_oauth_warning.py   # Warns before Google rejects a .local/raw-IP redirect URI
 python3 tests/test_service_account_impersonation.py   # Domain-wide delegation - real JWT, signature independently verified
+python3 tests/test_dynamic_dns.py   # DuckDNS auto-updates, and survives a simulated IP change unattended
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
 python3 tests/test_reset_password_script.py   # The emergency CLI recovery tool, run as a real subprocess
@@ -269,17 +280,29 @@ to do with anything you did wrong. The Settings and Account pages detect
 this automatically and show a warning right above the redirect URIs box
 if the hub is currently being reached in a way Google won't accept, so
 you see this *before* pasting a doomed URI into Google Cloud Console, not
-after. Two ways forward:
-- **Get a free dynamic-DNS name** (e.g. [DuckDNS](https://www.duckdns.org))
-  and point it at the hub's LAN IP - resolves fine for anyone on your
-  network, and satisfies Google's "real domain" requirement since it's
-  checking the string format, not that it's reachable from the public
-  internet.
-- **Do the one-time Connect step from a browser on the same machine the
-  hub runs on**, using `http://localhost:8811` instead of the `.local`
-  name or IP - Google's one real exception, no domain needed. (An SSH
-  local port-forward - `ssh -L 8811:localhost:8811 you@pi` - lets you do
-  this from your own laptop without physically sitting at the Pi.)
+after.
+
+**The actual fix, not a one-time workaround**: Settings → **Free remote
+domain (DuckDNS)**. Free at [duckdns.org](https://www.duckdns.org) (sign
+in with an existing Google/GitHub/etc. account, no email verification
+needed) - get a token, pick any subdomain, paste both into that card.
+From then on, the hub keeps that domain pointed at itself automatically,
+checking every 5 minutes in the background (`app/dynamic_dns.py`,
+`scheduler.py`) - including recovering on its own if the LAN IP ever
+changes after a reboot, which would otherwise silently break it. Once
+it's set up, the warning switches from generic advice to naming the exact
+address to use, and every future OAuth connect (any service, any team
+member, forever) just works normally through it - no more `.local`/IP
+rejections to think about again.
+
+If DuckDNS genuinely isn't an option, the one-time fallback still works:
+**do the Connect step from a browser on the same machine the hub runs
+on**, using `http://localhost:8811` instead of the `.local` name or IP -
+Google's other real exception, no domain needed. (An SSH local
+port-forward - `ssh -L 8811:localhost:8811 you@pi` - lets you do this
+from your own laptop without physically sitting at the Pi.) This only
+needs to happen once per person per service, though, so DuckDNS is worth
+setting up first if more than one or two connections are ever expected.
 
 ### Setting up domain-wide delegation (Google Workspace only, optional)
 
@@ -633,6 +656,17 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
+- **DuckDNS is automated, not just documented, because the manual version
+  fails silently.** Telling someone to create a DuckDNS account and point
+  it at their LAN IP by hand solves the problem exactly once - the moment
+  their Pi's IP changes after a reboot (no DHCP reservation is unusual,
+  not exceptional), the domain goes stale and Google connections start
+  failing again with no obvious cause, since nothing *looks* broken until
+  someone tries to connect a new service. A background job that
+  re-asserts the IP every 5 minutes (`scheduler.py`, same pattern as the
+  Telegram trigger poller) means this can't happen - proven directly in
+  `test_dynamic_dns.py` by simulating an IP change and confirming the job
+  catches it on its own, not just that the initial save works.
 - **Domain-wide delegation is additive, not a replacement for per-user
   OAuth** - a real design decision, not the default choice. Replacing
   OAuth entirely would break the hub for anyone not on Google Workspace

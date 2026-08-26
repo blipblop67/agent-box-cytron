@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleCheck, ShieldAlert, Copy, Check, ExternalLink, RefreshCw, Download, PartyPopper, Globe, Clapperboard, Mail } from 'lucide-react'
 import { api } from '../lib/api'
+import { relativeTime } from '../lib/format'
 import { Field, TextInput, Select } from '../components/common/FormField'
 import Button from '../components/common/Button'
 import Badge from '../components/common/Badge'
@@ -37,6 +38,7 @@ export default function SettingsPage() {
 
       <LlmSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <GoogleSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <DuckDnsSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <SmtpSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
@@ -211,6 +213,119 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
         </div>
       )}
     </form>
+  )
+}
+
+function DuckDnsSettingsCard({ settings, setSettings, isAdmin }) {
+  const [subdomain, setSubdomain] = useState(settings.duckdns_subdomain || '')
+  const [token, setToken] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [updating, setUpdating] = useState(false)
+  const [updateResult, setUpdateResult] = useState(null)
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const updated = await api.put('/settings', { duckdns_subdomain: subdomain, duckdns_token: token || undefined })
+      setSettings(updated)
+      setToken('')
+      setSaved(true)
+    } catch (err) {
+      setSaveError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleUpdateNow() {
+    setUpdating(true)
+    setUpdateResult(null)
+    try {
+      const result = await api.post('/settings/duckdns/update-now', {})
+      setUpdateResult({ ok: true, message: `Pointed ${result.domain} at ${result.ip}.` })
+      setSettings((s) => ({ ...s, duckdns_last_updated_ip: result.ip, duckdns_last_updated_at: Date.now() / 1000 }))
+    } catch (err) {
+      setUpdateResult({ ok: false, message: err.message })
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold text-ink">Free remote domain (DuckDNS)</h2>
+        <p className="mt-1 text-xs text-ink-muted">
+          The actual permanent fix for the warning above, not a one-time workaround: a free domain
+          name that always points at this hub, even if its local IP ever changes. Get a free account
+          and token at <a href="https://www.duckdns.org" target="_blank" rel="noreferrer" className="text-copper hover:underline">duckdns.org</a> (sign
+          in with an existing Google/GitHub account, no email needed), pick any subdomain name, and
+          paste both below - the hub keeps it updated automatically from then on, checking every few
+          minutes in the background.
+        </p>
+      </div>
+
+      {settings.duckdns_configured && (
+        <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <CircleCheck size={13} className="text-signal shrink-0" />
+            <span className="text-ink">
+              http://{settings.duckdns_subdomain}.duckdns.org — use this address for Google sign-in
+            </span>
+          </div>
+          {settings.duckdns_last_updated_at ? (
+            <p className="mt-1 text-ink-faint">
+              Last pointed at {settings.duckdns_last_updated_ip} ({relativeTime(settings.duckdns_last_updated_at)})
+            </p>
+          ) : (
+            <p className="mt-1 text-ink-faint">Not updated yet - click "Update now" below</p>
+          )}
+          {settings.duckdns_last_error && <p className="mt-1 text-danger">{settings.duckdns_last_error}</p>}
+        </div>
+      )}
+
+      {isAdmin && (
+        <form onSubmit={handleSave} className="space-y-3">
+          <Field label="Subdomain" hint="Just the name you picked on DuckDNS, not the full domain">
+            <div className="flex items-center gap-2">
+              <TextInput value={subdomain} onChange={(e) => setSubdomain(e.target.value)} placeholder="sirim-agenthub" />
+              <span className="whitespace-nowrap text-xs text-ink-faint">.duckdns.org</span>
+            </div>
+          </Field>
+          <Field label="Token" hint={settings.duckdns_token_configured ? undefined : 'From your DuckDNS account page'}>
+            <div className="flex items-center gap-2">
+              <TextInput
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={settings.duckdns_token_configured ? '••••••••••••  (leave blank to keep current token)' : ''}
+              />
+              {settings.duckdns_token_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+            </div>
+          </Field>
+          {saveError && <p className="text-xs text-danger">{saveError}</p>}
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={!subdomain || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            {saved && <span className="text-xs text-signal">Saved</span>}
+          </div>
+        </form>
+      )}
+
+      {isAdmin && settings.duckdns_configured && (
+        <div className="space-y-2 border-t border-line pt-4">
+          <Button variant="secondary" size="sm" onClick={handleUpdateNow} disabled={updating}>
+            {updating ? 'Updating…' : 'Update now'}
+          </Button>
+          {updateResult && (
+            <p className={`text-xs ${updateResult.ok ? 'text-signal' : 'text-danger'}`}>{updateResult.message}</p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

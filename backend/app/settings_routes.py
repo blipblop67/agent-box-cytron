@@ -1,7 +1,10 @@
+import time
+import urllib.parse
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from . import gmail_routes, drive_routes, calendar_routes, sheets_routes, email_sender, google_oauth, \
-    hub_settings, service_account_auth
+from . import db, gmail_routes, drive_routes, calendar_routes, sheets_routes, dynamic_dns, email_sender, \
+    google_oauth, hub_settings, service_account_auth
 from .auth import get_current_user
 from .models import SettingsOut, SettingsUpdate, TestEmailRequest, TestImpersonationRequest
 
@@ -20,7 +23,16 @@ def _settings_out(request: Request) -> dict:
     settings["google_calendar_redirect_uri"] = google_oauth.redirect_uri_for(request, calendar_routes.CALLBACK_PATH)
     settings["google_sheets_redirect_uri"] = google_oauth.redirect_uri_for(request, sheets_routes.CALLBACK_PATH)
     # all four share the same host, so one check covers all of them
-    settings["google_oauth_redirect_warning"] = google_oauth.google_oauth_warning_for(settings["google_email_redirect_uri"])
+    warning = google_oauth.google_oauth_warning_for(settings["google_email_redirect_uri"])
+    if warning and settings["duckdns_configured"]:
+        # already have a real fix in hand - say so directly instead of the generic "get a domain" advice
+        port = urllib.parse.urlparse(settings["google_email_redirect_uri"]).port
+        suggested = f"http://{settings['duckdns_subdomain']}.duckdns.org" + (f":{port}" if port else "")
+        warning = (
+            f"You're reachable at {suggested} now (DuckDNS is already configured below) - use that "
+            f"address instead of this one for Google sign-in, and Google will accept it."
+        )
+    settings["google_oauth_redirect_warning"] = warning
     return settings
 
 
@@ -74,3 +86,25 @@ def test_impersonation(body: TestImpersonationRequest, user: dict = Depends(get_
     except service_account_auth.ServiceAccountError as exc:
         raise HTTPException(400, str(exc))
     return {"ok": True, "impersonated": body.impersonate, "scope": body.scope}
+
+
+@router.post("/duckdns/update-now")
+def duckdns_update_now(user: dict = Depends(get_current_user)):
+    """Triggers an immediate update rather than waiting for the next
+    background refresh (scheduler.py, every 5 minutes) - lets someone
+    confirm it actually works right after saving credentials, instead of
+    wondering whether it's configured correctly for the next few minutes."""
+    if user["role"] != "admin":
+        raise HTTPException(403, "Only a hub admin can update DuckDNS")
+    creds = hub_settings.get_duckdns_credentials()
+    if creds is None:
+        raise HTTPException(400, "DuckDNS isn't configured yet - add a subdomain and token first")
+    subdomain, token = creds
+    try:
+        result = dynamic_dns.update(subdomain, token)
+    except dynamic_dns.DuckDnsError as exc:
+        raise HTTPException(400, str(exc))
+    db.set_setting("duckdns_last_updated_ip", result["ip"])
+    db.set_setting("duckdns_last_updated_at", str(time.time()))
+    db.set_setting("duckdns_last_error", "")
+    return result
