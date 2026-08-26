@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CircleCheck, ExternalLink, Copy, Check, KeyRound, Mail } from 'lucide-react'
+import { CircleCheck, ExternalLink, Copy, Check, KeyRound, Mail, ShieldAlert } from 'lucide-react'
 import { api, clearStoredToken } from '../lib/api'
 import { Field, TextInput } from '../components/common/FormField'
 import Button from '../components/common/Button'
@@ -219,6 +219,13 @@ function PersonalGoogleCard() {
           <RedirectUriRow label="Drive" value={settings.google_drive_redirect_uri} />
           <RedirectUriRow label="Calendar" value={settings.google_calendar_redirect_uri} />
           <RedirectUriRow label="Sheets" value={settings.google_sheets_redirect_uri} />
+        </div>
+      )}
+
+      {clientId && settings.google_oauth_redirect_warning && (
+        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-dim px-3 py-2.5 text-xs text-danger">
+          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+          <span>{settings.google_oauth_redirect_warning}</span>
         </div>
       )}
 

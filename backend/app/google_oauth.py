@@ -15,6 +15,7 @@ user_settings.resolve_google_credentials - someone's own Google app if
 they've set one, otherwise the hub-wide default. Nothing in this file
 caches credentials, so a change takes effect on the very next call.
 """
+import re
 import urllib.parse
 
 import httpx
@@ -81,3 +82,43 @@ def redirect_uri_for(request, callback_path: str) -> str:
     (agenthub.local vs a raw IP), as long as each one you actually use is
     also registered as a redirect URI in Google Cloud Console."""
     return f"{str(request.base_url).rstrip('/')}{callback_path}"
+
+
+_IPV4_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+
+
+def google_oauth_warning_for(redirect_uri: str) -> str | None:
+    """Google's own client-side validation rejects a redirect URI whose
+    host isn't either localhost/127.0.0.1 (its one loopback exception) or
+    a domain with a real public suffix - which rules out exactly the two
+    ways this hub is normally reached: a `.local` mDNS name (not a real,
+    ownable TLD) and a raw LAN IP (no TLD at all). Both fail with the
+    same confusing Guava-powered error in Google Cloud Console:
+    "must use a domain that is a valid top private domain." This isn't a
+    bug in the URI this hub computes - it's a hard limit of what Google's
+    OAuth "Web application" client type will ever accept - so the fix is
+    catching it here and telling someone before they hit that error
+    screen, not after.
+    """
+    try:
+        hostname = urllib.parse.urlparse(redirect_uri).hostname or ""
+    except ValueError:
+        return None
+    if hostname in ("localhost", "127.0.0.1", "::1"):
+        return None  # Google's specific loopback exception - always fine
+    if hostname.endswith(".local"):
+        return (
+            f"'{hostname}' is an mDNS name, not a real domain - Google's OAuth setup will reject it "
+            f"with \"must use a domain that is a valid top private domain.\" Access the hub through a "
+            f"real domain instead (a free dynamic-DNS name like DuckDNS, pointed at this hub's LAN IP, "
+            f"works well and costs nothing), or connect from a browser on this same machine using "
+            f"http://localhost instead of the .local address."
+        )
+    if _IPV4_RE.match(hostname) or ":" in hostname:
+        return (
+            f"'{hostname}' is a raw IP address - Google's OAuth setup will reject it with \"must end "
+            f"with a public top-level domain.\" Access the hub through a real domain instead (a free "
+            f"dynamic-DNS name like DuckDNS, pointed at this IP, works well and costs nothing), or "
+            f"connect from a browser on this same machine using http://localhost instead of the IP."
+        )
+    return None

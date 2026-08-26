@@ -196,6 +196,13 @@ function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
         <RedirectUriRow label="Sheets" value={settings.google_sheets_redirect_uri} />
       </div>
 
+      {settings.google_oauth_redirect_warning && (
+        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-dim px-3 py-2.5 text-xs text-danger">
+          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+          <span>{settings.google_oauth_redirect_warning}</span>
+        </div>
+      )}
+
       {isAdmin && (
         <div className="flex items-center gap-3 pt-1">
           <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>

@@ -13,6 +13,8 @@ def _settings_out(request: Request) -> dict:
     settings["google_drive_redirect_uri"] = google_oauth.redirect_uri_for(request, drive_routes.CALLBACK_PATH)
     settings["google_calendar_redirect_uri"] = google_oauth.redirect_uri_for(request, calendar_routes.CALLBACK_PATH)
     settings["google_sheets_redirect_uri"] = google_oauth.redirect_uri_for(request, sheets_routes.CALLBACK_PATH)
+    # all four share the same host, so one check covers all of them
+    settings["google_oauth_redirect_warning"] = google_oauth.google_oauth_warning_for(settings["google_email_redirect_uri"])
     return settings
 
 

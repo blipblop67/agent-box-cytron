@@ -333,6 +333,28 @@ Do this once per deployment, as the admin, in
    "unverified app" warning — expected for a project that hasn't gone
    through Google's review; click **Advanced → Go to (app name)**.
 
+**Before you paste redirect URIs into step 5, read this if the Settings
+page shows a red warning above them.** Google's OAuth client will only
+ever accept a redirect URI whose host is `localhost`/`127.0.0.1`, or a
+domain with a real, ownable public suffix — which flatly rejects the two
+most common ways this hub is actually reached: the default `.local` mDNS
+name (`agenthub.local`) and a raw LAN IP address. This isn't a bug in
+this hub or a mistake you made; it's a hard limit of what Google's OAuth
+setup will ever accept, and it produces a genuinely confusing error
+("must use a domain that is a valid top private domain") that gives no
+hint why. The Settings and Account pages detect this automatically and
+warn you before you waste a trip through Google Cloud Console over it.
+Two fixes:
+- **Free dynamic DNS** (e.g. [DuckDNS](https://www.duckdns.org)) pointed
+  at the hub's LAN IP — solves it permanently, works for anyone on your
+  network, and satisfies Google's check since it's validating the string
+  format of the domain, not that it's reachable from the public internet.
+- **Do the Connect step once from a browser on the hub's own machine**,
+  using `http://localhost:8811` — Google's genuine loopback exception, no
+  domain needed. From another machine, an SSH local port-forward
+  (`ssh -L 8811:localhost:8811 you@pi`) gets you there without physically
+  sitting at the Pi.
+
 ### Setting up Telegram bots
 
 No Google Cloud project needed — anyone can create as many bots as they
@@ -535,6 +557,13 @@ networks block mDNS specifically — just use the IP going forward.
 always one of: the specific API isn't enabled in Google Cloud Console, or
 your Google account isn't added under Test Users on the OAuth consent
 screen. Both covered in Section 9.
+
+**Google Cloud Console rejects a redirect URI with "must use a domain
+that is a valid top private domain" or "must end with a public
+top-level domain":** you're pasting in a `.local` address or a raw LAN
+IP — Google's OAuth setup never accepts either. See the callout in
+Section 9; the Settings page also warns about this automatically before
+you get this far.
 
 **Checking for updates gives an error:** if it mentions GitHub — a 404
 usually means the configured repo/branch is wrong or private (this check

@@ -132,12 +132,30 @@ path above, say so and I'll look at what it'd take to add.
    (Gmail, Drive, Calendar, Sheets) with a Copy button next to each —
    these are computed from however you're currently reaching the hub, so
    they're always correct, nothing to type by hand.
-3. Copy **all four** into the OAuth client's "Authorized redirect URIs"
+3. **If there's a red warning above those URIs, stop and read it before
+   continuing to step 4.** It means the address you're currently using to
+   reach the hub — almost always a `.local` name or a raw LAN IP — will
+   be rejected by Google's OAuth client with a confusing error ("must use
+   a domain that is a valid top private domain") no matter how carefully
+   you copy it in. This isn't specific to the SIRIM setup; it's a hard
+   Google requirement. Two fixes, either is fine:
+   - Get a free [DuckDNS](https://www.duckdns.org) name pointed at the
+     hub's LAN IP, and do the rest of this setup through that address
+     instead of the `.local` name or IP.
+   - Do this one step (and the Connect steps in Part 4) from a browser on
+     the same machine the hub runs on, using `http://localhost:8811`
+     instead — Google's real exception, no domain needed. An SSH local
+     port-forward (`ssh -L 8811:localhost:8811 you@pi`) lets you do this
+     from your own laptop.
+
+   If there's no warning, you're already reaching the hub through
+   something Google will accept — carry on to step 4.
+4. Copy **all four** into the OAuth client's "Authorized redirect URIs"
    list back in the Google Cloud Console tab, then **Save** on the Google
    side.
-4. Back in Google Cloud Console, open the OAuth client you just created
+5. Back in Google Cloud Console, open the OAuth client you just created
    and copy its **Client ID** and **Client secret**.
-5. Paste both into the Google integration card on the Settings page and
+6. Paste both into the Google integration card on the Settings page and
    hit **Save**. Takes effect immediately, no restart needed.
 
 This part is a one-time, hub-wide setup — hairil doesn't need to do
@@ -284,6 +302,10 @@ unattended with reasonable confidence.
   organization as the project — an Internal app rejects anyone outside
   the org, with no Test Users list to fix it from. Either way, also
   double check the Gmail/Sheets APIs are actually enabled (Part 1.1).
+- **Google Cloud Console rejected a redirect URI with "must use a domain
+  that is a valid top private domain" or "must end with a public
+  top-level domain"**: you were pasting in a `.local` address or a raw
+  LAN IP — see the callout in Part 2, step 3.
 - **The tracker runs but finds no emails**: the search query (Part 6) is
   probably too narrow, or too specific to wording that doesn't match how
   these emails are actually worded. Loosen it and check the trace.

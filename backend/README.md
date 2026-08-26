@@ -224,6 +224,10 @@ are the most common reason connecting fails:
    all share it. The Settings page shows the exact four redirect URIs to
    add here (they're derived from however you're currently reaching the
    hub, so they're always right - a "Copy" button sits next to each one).
+   **If the Settings page shows a red warning above those URIs, read it
+   before pasting anything into Google Cloud Console** - see the note right
+   after this list; it'll save you a confusing round trip through Google's
+   own error messages.
 5. Paste the client ID and secret into the Settings page and hit Save -
    takes effect immediately, no restart. (An admin who'd rather set these
    via `.env`/environment variables instead still can - see the
@@ -239,6 +243,29 @@ are the most common reason connecting fails:
 If a connection attempt does fail, it now lands on a page explaining the
 likely cause (`app/oauth_errors.py`) instead of a bare error - that's the
 first place to look.
+
+**A hard requirement of Google's, not anything to do with this hub**:
+Google's OAuth client will only accept a redirect URI whose host is either
+`localhost`/`127.0.0.1`, or a domain with a real, ownable public suffix.
+This means **the two most common ways to reach this hub - a `.local` mDNS
+name (the default `agenthub.local`) and a raw LAN IP address - are both
+rejected**, with a genuinely confusing error
+("must use a domain that is a valid top private domain") that has nothing
+to do with anything you did wrong. The Settings and Account pages detect
+this automatically and show a warning right above the redirect URIs box
+if the hub is currently being reached in a way Google won't accept, so
+you see this *before* pasting a doomed URI into Google Cloud Console, not
+after. Two ways forward:
+- **Get a free dynamic-DNS name** (e.g. [DuckDNS](https://www.duckdns.org))
+  and point it at the hub's LAN IP - resolves fine for anyone on your
+  network, and satisfies Google's "real domain" requirement since it's
+  checking the string format, not that it's reachable from the public
+  internet.
+- **Do the one-time Connect step from a browser on the same machine the
+  hub runs on**, using `http://localhost:8811` instead of the `.local`
+  name or IP - Google's one real exception, no domain needed. (An SSH
+  local port-forward - `ssh -L 8811:localhost:8811 you@pi` - lets you do
+  this from your own laptop without physically sitting at the Pi.)
 
 ### Setting up Telegram (no cloud console needed)
 
