@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Trash2, Search } from 'lucide-react'
 import { NODE_REGISTRY, CATEGORY_CLASSES } from './nodeRegistry'
 import { useFlowEditorStore } from '../state/flowEditorStore'
@@ -68,6 +68,7 @@ export default function ConfigPanel() {
         {node.type === 'calendar' && <CalendarFields data={node.data} patch={patch} />}
         {node.type === 'sheets' && <SheetsFields data={node.data} patch={patch} />}
         {node.type === 'telegram' && <TelegramFields data={node.data} patch={patch} />}
+        {node.type === 'call_flow' && <CallFlowFields data={node.data} patch={patch} />}
         {node.type === 'calculator' && <CalculatorFields data={node.data} patch={patch} />}
       </div>
     </div>
@@ -471,6 +472,50 @@ function TelegramFields({ data, patch }) {
         <Field label="Max messages">
           <TextInput type="number" min={1} max={50} value={data.max_results ?? 10} onChange={(e) => patch({ max_results: Number(e.target.value) })} />
         </Field>
+      )}
+    </>
+  )
+}
+
+function CallFlowFields({ data, patch }) {
+  const currentFlowId = useFlowEditorStore((s) => s.flowId)
+  const [flows, setFlows] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    api.get('/flows')
+      .then((all) => setFlows(all.filter((f) => f.id !== currentFlowId)))
+      .catch((err) => setError(err.message))
+  }, [currentFlowId])
+
+  const selected = flows?.find((f) => f.id === data.target_flow_id)
+
+  return (
+    <>
+      <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+        Runs another flow as a step and uses its final output here - as if this node's own input had
+        been typed straight into that flow. The called flow always starts fresh, with no memory of
+        this conversation.
+      </p>
+      <Field label="Flow to call">
+        {error && <p className="text-xs text-danger">{error}</p>}
+        {flows === null && !error ? (
+          <p className="text-xs text-ink-faint">Loading flows…</p>
+        ) : flows.length === 0 ? (
+          <p className="text-xs text-ink-faint">No other flows to call yet - create one first.</p>
+        ) : (
+          <Select value={data.target_flow_id || ''} onChange={(e) => patch({ target_flow_id: e.target.value })}>
+            <option value="">Select a flow…</option>
+            {flows.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}{f.visibility === 'private' ? ' (private)' : ''}</option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      {selected && (
+        <p className="text-[11px] text-ink-faint">
+          {selected.description || 'No description set for this flow.'}
+        </p>
       )}
     </>
   )

@@ -90,7 +90,7 @@ def run_flow(flow_id: str, body: FlowRunRequest, user: dict = Depends(get_curren
     flow = _require_flow_access(flow_id, user)
     graph = json.loads(flow["graph_json"])
     try:
-        result = flow_engine.run_flow(graph, body.input, user["id"])
+        result = flow_engine.run_flow(graph, body.input, user["id"], flow_id=flow_id)
     except flow_engine.FlowError as exc:
         raise HTTPException(400, {"node_id": exc.node_id, "message": str(exc)})
     return FlowRunResponse(**result)

@@ -8,6 +8,8 @@ This is the "flow node" path described in the hub's design notes: deterministic
 and inspectable one node at a time, so the trace this returns can show someone
 learning the system exactly what happened at each step, not just a final answer.
 """
+import json
+
 from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, sheets_client, \
     telegram_client, telegram_tokens, user_settings, vector_store, web_search_client, youtube_client
 from .embeddings import get_embedding_provider
@@ -46,12 +48,34 @@ def _topological_order(nodes: list[dict], edges: list[dict]) -> list[str]:
     return order
 
 
-def run_flow(graph: dict, run_input: str, user_id: str, history: list[dict] | None = None) -> dict:
+MAX_CALL_DEPTH = 5  # backstop against a very long (but acyclic) Call Flow chain, not just true cycles
+
+
+def run_flow(graph: dict, run_input: str, user_id: str, history: list[dict] | None = None,
+              flow_id: str | None = None, call_stack: frozenset[str] | None = None) -> dict:
     """`history`, when given, is prior turns of a conversation
     ([{"role": "user"|"assistant", "content": ...}, ...]) - every LLM node in
     the flow gets it prepended to its own messages, so a flow run through a
     Conversation (see conversation_routes.py) remembers earlier turns instead
-    of treating each message as a one-off, the way a plain Run does."""
+    of treating each message as a one-off, the way a plain Run does.
+
+    `flow_id`/`call_stack` exist for Call Flow nodes: a node whose only job is
+    invoking a *different* flow as a step, so one agent can use another as a
+    tool. `call_stack` is every flow_id already running higher up this same
+    call chain - checked before adding this flow, so A calling B calling A
+    again is caught as a cycle and rejected with a clear error, rather than
+    recursing until the process runs out of stack. `MAX_CALL_DEPTH` is a
+    separate backstop for a long but genuinely acyclic chain (A->B->C->D->...),
+    which cycle detection alone wouldn't catch."""
+    call_stack = call_stack or frozenset()
+    if flow_id and flow_id in call_stack:
+        raise FlowError("", f"Cycle detected: this Call Flow chain already includes this exact flow - "
+                             f"a flow can't (directly or indirectly) call back into itself")
+    if len(call_stack) >= MAX_CALL_DEPTH:
+        raise FlowError("", f"Call Flow chain is more than {MAX_CALL_DEPTH} flows deep - "
+                             f"check for an unintentionally long chain of flows calling flows")
+    next_call_stack = call_stack | ({flow_id} if flow_id else frozenset())
+
     nodes = {n["id"]: n for n in graph.get("nodes", [])}
     edges = graph.get("edges", [])
     if not nodes:
@@ -76,7 +100,8 @@ def run_flow(graph: dict, run_input: str, user_id: str, history: list[dict] | No
         node_input = "\n\n".join(outputs[p] for p in predecessor_ids if p in outputs)
 
         try:
-            output = _execute_node(node_type, data, node_input, run_input, user_id, history)
+            output = _execute_node(node_type, data, node_input, run_input, user_id, history,
+                                    call_stack=next_call_stack)
         except Exception as exc:  # noqa: BLE001 - surface any tool/LLM failure into the trace
             trace.append({"node_id": node_id, "type": node_type, "input": node_input,
                           "output": None, "error": str(exc)})
@@ -93,7 +118,7 @@ def run_flow(graph: dict, run_input: str, user_id: str, history: list[dict] | No
 
 
 def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, user_id: str,
-                   history: list[dict] | None = None) -> str:
+                   history: list[dict] | None = None, call_stack: frozenset[str] | None = None) -> str:
     if node_type == "input":
         return run_input
 
@@ -154,6 +179,9 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
 
     if node_type == "telegram":
         return _execute_telegram_node(data, node_input, run_input)
+
+    if node_type == "call_flow":
+        return _execute_call_flow_node(data, node_input, run_input, user_id, history, call_stack)
 
     if node_type == "output":
         return node_input or run_input
@@ -316,6 +344,39 @@ def _execute_telegram_node(data: dict, node_input: str, run_input: str) -> str:
             return "(no recent messages)"
         return "\n".join(f"{m['from']}: {m['text']}" for m in messages)
     raise ValueError(f"Unknown telegram action '{action}'")
+
+
+def _execute_call_flow_node(data: dict, node_input: str, run_input: str, user_id: str,
+                             history: list[dict] | None, call_stack: frozenset[str] | None) -> str:
+    """The simple version of "agents talking to each other": this node's
+    whole job is running a *different* flow and handing back its final
+    output, the same way an Email or Sheets node hands back whatever that
+    tool produced. The called flow gets this node's input as its own
+    run_input - as if someone had typed that directly into the called
+    flow's Input node - and always starts fresh (no history carried over),
+    since it's being used as a discrete step, not merged into this
+    conversation.
+
+    Cycle/depth protection lives in run_flow, not here - this function just
+    has to pass flow_id/call_stack through so that check actually happens."""
+    target_flow_id = data.get("target_flow_id")
+    if not target_flow_id:
+        raise ValueError("This Call Flow node has no target flow selected")
+
+    target_flow = db.get_flow(target_flow_id)
+    if target_flow is None:
+        raise ValueError("The flow this node calls no longer exists")
+
+    caller = db.get_user(user_id)
+    is_admin = bool(caller and caller["role"] == "admin")
+    if not db.user_can_access_flow(target_flow, user_id, is_admin=is_admin):
+        raise ValueError(f"'{target_flow['name']}' is private to another team member - this node can't call it")
+
+    target_graph = json.loads(target_flow["graph_json"])
+    sub_input = node_input or run_input
+    result = run_flow(target_graph, sub_input, user_id, history=None,
+                       flow_id=target_flow_id, call_stack=call_stack)
+    return result["output"]
 
 
 def _execute_web_search_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:

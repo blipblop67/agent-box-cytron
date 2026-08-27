@@ -86,7 +86,7 @@ def send_message(conversation_id: str, body: ConversationSendMessage, user: dict
 
     graph = json.loads(flow["graph_json"])
     try:
-        result = flow_engine.run_flow(graph, body.content, user["id"], history=history)
+        result = flow_engine.run_flow(graph, body.content, user["id"], history=history, flow_id=conversation["flow_id"])
     except flow_engine.FlowError as exc:
         raise HTTPException(400, {"node_id": exc.node_id, "message": str(exc)})
 

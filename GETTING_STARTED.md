@@ -380,6 +380,7 @@ trigger row in [Section 8](#8-the-five-ways-to-run-a-flow).
 | **Sheets** | Create a spreadsheet, read it, or **update a row in place** (find by a key in the first column, update that row, or append if it's new) |
 | **Calendar** | List upcoming events, or create a new one |
 | **Telegram** | Send a message or read recent ones, through a specific bot |
+| **Call Flow** | Runs a different flow as a step and uses its output — one agent calling another |
 | **Calculator** | Evaluates a math expression safely |
 | **Output** | The final result of the run |
 
@@ -392,6 +393,16 @@ the same way a Knowledge base node references a fixed `kb_id` — there's no
 "create if missing" magic. Create the spreadsheet once (temporarily switch
 the node to "Create," run it, copy the ID it returns), then point every
 node that updates it at that same ID.
+
+**Call Flow is how one agent uses another** — pick this over building
+everything into one giant flow when a piece of logic is genuinely its own
+agent (a specialized flow other flows want to reuse, or a router flow
+that delegates to whichever specialist fits the request). The called
+flow always starts fresh — no memory of the calling flow's conversation
+— and its final output becomes this node's output, the same as any other
+tool node. A flow can't be made to call itself, directly or through a
+chain of other flows — the hub catches that and gives a clear error
+rather than hanging or crashing.
 
 ## 11. Template tour
 

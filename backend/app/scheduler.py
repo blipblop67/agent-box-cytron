@@ -102,7 +102,7 @@ def _run_schedule(schedule_id: str) -> None:
         # Google nodes authenticate via the hub-wide service account, not
         # whoever created this schedule - each node's own "Impersonate"
         # field (if set) decides which Workspace person it acts as
-        result = flow_engine.run_flow(graph, schedule["input_text"], schedule["created_by"])
+        result = flow_engine.run_flow(graph, schedule["input_text"], schedule["created_by"], flow_id=flow["id"])
         db.record_schedule_run(schedule_id, "success")
         db.create_schedule_run(schedule_id, flow["id"], "success", result["output"], None, json.dumps(result["trace"]))
     except flow_engine.FlowError as exc:

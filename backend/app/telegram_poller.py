@@ -72,7 +72,7 @@ def _handle_message(trigger, creds: dict, incoming_text: str) -> None:
 
     graph = json.loads(flow["graph_json"])
     try:
-        result = flow_engine.run_flow(graph, incoming_text, trigger["created_by"], history=history)
+        result = flow_engine.run_flow(graph, incoming_text, trigger["created_by"], history=history, flow_id=flow["id"])
         reply_text = result["output"]
     except flow_engine.FlowError as exc:
         db.create_telegram_trigger_run(trigger["id"], incoming_text, None, "error", str(exc))

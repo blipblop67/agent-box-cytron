@@ -98,6 +98,15 @@ Drive tool integrations. Pairs with the React frontend in
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
   flow picks which one to use - a Customer Support flow and a Sales flow can
   message through two entirely different bots regardless of who runs them
+- **Call Flow** — one agent using another as a tool: a node that runs a
+  different flow and hands back its final output, the same way an Email
+  or Sheets node hands back whatever it produced. Useful for a router
+  flow that delegates to whichever specialist fits the request, or
+  reusing one flow as a building block inside several others rather than
+  duplicating its logic. The called flow always starts fresh (no shared
+  conversation memory), and a flow can't call itself into a cycle -
+  direct or indirect - or nest more than 5 levels deep
+  (`flow_engine.run_flow`'s `call_stack`/`MAX_CALL_DEPTH`)
 - **Telegram triggers** — wire a flow to a bot (the "Telegram" button in
   the flow editor) and it answers messages automatically: a background job
   checks every few seconds, runs the flow with the same conversation memory
@@ -162,6 +171,7 @@ python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean mess
 python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
 python3 tests/test_telegram_triggers.py   # Message a bot, get an auto-reply with real memory - zero /run calls
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
+python3 tests/test_call_flow.py   # One flow calling another - cycle detection, depth limit, access control
 python3 tests/test_calendar.py   # Calendar via the service account, listing/creating events, and using both from a flow
 python3 tests/test_sheets.py   # The upsert behavior a real progress tracker needs, via the service account
 python3 tests/test_service_account_impersonation.py   # The full SIRIM scenario - real JWT, signature independently verified
@@ -557,6 +567,23 @@ is that someone learning the system can see exactly what happened at each
 node, not just a final answer.
 
 ## Design notes / why it's built this way
+
+- **Call Flow (one flow invoking another) needed two independent safety
+  nets, not one.** Cycle detection (`call_stack`, a frozenset of every
+  flow_id already running higher up the same call chain) catches A
+  calling B calling A - direct or indirect - but a long, genuinely
+  acyclic chain (A→B→C→D→...) would sail straight through cycle
+  detection while still being something nobody actually wants to happen
+  by accident. `MAX_CALL_DEPTH` (5) catches that second case
+  independently. Both are proven with dedicated tests in
+  `test_call_flow.py` - a direct self-call, an indirect A→B→A cycle, and
+  a deliberately-constructed 8-flow chain that's acyclic but too deep.
+- **The called flow always starts fresh - no history carried over, even
+  inside a Chat conversation.** A Call Flow node is a tool call, not a
+  merge of two conversations - the calling flow keeps its own
+  conversation memory; the called flow gets exactly what the node's
+  input was, the same as if someone had typed it into that flow's own
+  Input node, and nothing else.
 
 - **Google access became one hub-wide service account, replacing
   per-person OAuth entirely** - a real architectural pivot, not an
