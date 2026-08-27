@@ -175,7 +175,7 @@ function ImpersonateField({ data, patch }) {
   const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
   if (!serviceAccountConfigured) return null
   return (
-    <Field label="Impersonate (optional)" hint="Acts as this Workspace address via the service account, instead of your own connection">
+    <Field label="Impersonate (optional)" hint="Acts as this Workspace address - leave blank to use the service account's own identity instead">
       <TextInput
         type="email"
         value={data.impersonate || ''}
@@ -187,12 +187,12 @@ function ImpersonateField({ data, patch }) {
 }
 
 function EmailFields({ data, patch }) {
-  const gmail = useCatalogStore((s) => s.gmail)
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
   return (
     <>
-      {!gmail.connected && (
+      {!serviceAccountConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
-          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Gmail</Link>.
+          Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
       )}
       <Field label="Action">
@@ -229,7 +229,7 @@ function EmailFields({ data, patch }) {
 }
 
 function DriveFields({ data, patch }) {
-  const drive = useCatalogStore((s) => s.drive)
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
   const [search, setSearch] = useState('')
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
@@ -237,7 +237,9 @@ function DriveFields({ data, patch }) {
   async function runSearch() {
     setSearching(true)
     try {
-      setResults(await api.get(`/drive/files?q=${encodeURIComponent(search)}`))
+      const params = new URLSearchParams({ q: search })
+      if (data.impersonate) params.set('impersonate', data.impersonate)
+      setResults(await api.get(`/drive/files?${params}`))
     } finally {
       setSearching(false)
     }
@@ -245,9 +247,9 @@ function DriveFields({ data, patch }) {
 
   return (
     <>
-      {!drive.connected && (
+      {!serviceAccountConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
-          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Drive</Link>.
+          Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
       )}
       <Field label="Action">
@@ -324,13 +326,13 @@ function DriveFields({ data, patch }) {
 }
 
 function CalendarFields({ data, patch }) {
-  const calendarConnected = useCatalogStore((s) => s.calendar?.connected)
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
 
   return (
     <>
-      {!calendarConnected && (
+      {!serviceAccountConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
-          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Calendar</Link>.
+          Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
       )}
       <Field label="Action">
@@ -377,13 +379,13 @@ function CalendarFields({ data, patch }) {
 }
 
 function SheetsFields({ data, patch }) {
-  const sheetsConnected = useCatalogStore((s) => s.sheets?.connected)
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
 
   return (
     <>
-      {!sheetsConnected && (
+      {!serviceAccountConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
-          Not connected yet. <Link to="/connections" className="text-copper hover:underline">Connect Sheets</Link>.
+          Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
       )}
       <Field label="Action">

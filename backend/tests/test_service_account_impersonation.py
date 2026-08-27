@@ -132,6 +132,11 @@ def main():
     assert settings["google_service_account_email"] == "sirim-agent@sirim-coc-agent.iam.gserviceaccount.com"
     print("[ok] Employee (an admin) uploaded the service account key - shows its own email, not a secret")
 
+    # --- the private key material itself is never echoed back, only a "configured" flag + email ---
+    assert "private_key" not in settings
+    assert _private_pem not in str(settings)
+    print("[ok] the private key is never returned by the API, only a 'configured' flag and the service account's own email")
+
     # --- a non-admin can't upload one ---
     sam_headers = auth_headers(client, "Sam")
     forbidden = client.put("/api/settings", headers=sam_headers, json={"google_service_account_key": SERVICE_ACCOUNT_KEY})
@@ -210,8 +215,17 @@ def main():
     assert "hairil@cytron.io" in _last_jwt_by_subject
     print("[ok] the JWT sent to Google had sub=hairil@cytron.io - independently verified as a real, valid signature")
 
-    # --- a node with NO impersonate field is completely unaffected - falls back
-    # to personal OAuth exactly as before this feature existed ---
+    # --- a node with NO impersonate field attempts self-auth (a subject-less JWT) -
+    # Gmail specifically has no inbox for a plain service account, so this should
+    # fail with a clear, specific error, not a generic one ---
+    def fake_self_auth_post(url, data=None, json=None, **kwargs):
+        if url == "https://oauth2.googleapis.com/token" and data and "assertion" in data:
+            header_b64, claims_b64, sig_b64 = data["assertion"].split(".")
+            claims = json_module.loads(_unb64(claims_b64))
+            assert "sub" not in claims  # this IS the self-auth path - confirms no impersonation was attempted
+            return FakeResponse({"error": "invalid_grant", "error_description": "no such mailbox"}, status_code=400)
+        raise AssertionError(f"unexpected POST in self-auth test: {url}")
+
     normal_flow = client.post("/api/flows", headers=admin_headers, json={"name": "Normal flow, no impersonation"}).json()
     normal_graph = {
         "nodes": [
@@ -222,10 +236,11 @@ def main():
         "edges": [{"id": "e1", "source": "in", "target": "email"}, {"id": "e2", "source": "email", "target": "out"}],
     }
     client.put(f"/api/flows/{normal_flow['id']}", headers=admin_headers, json={"graph": normal_graph})
-    no_oauth_result = client.post(f"/api/flows/{normal_flow['id']}/run", headers=admin_headers, json={"input": ""})
-    assert no_oauth_result.status_code == 400  # Employee has no personal Gmail connection - expected, not impersonating
-    assert "connect" in no_oauth_result.text.lower() or "reconnect" in no_oauth_result.text.lower() or "gmail" in no_oauth_result.text.lower()
-    print("[ok] a node with no impersonate field still requires personal OAuth exactly as before - unaffected")
+    with patch("httpx.post", side_effect=fake_self_auth_post):
+        no_impersonate_result = client.post(f"/api/flows/{normal_flow['id']}/run", headers=admin_headers, json={"input": ""})
+    assert no_impersonate_result.status_code == 400
+    assert "no inbox of its own" in str(no_impersonate_result.json()) and "Impersonate" in str(no_impersonate_result.json())
+    print("[ok] a node with no Impersonate field attempts self-auth, and Gmail's rejection gives a specific, actionable error")
 
     print("\nAll service-account impersonation smoke tests passed.")
 

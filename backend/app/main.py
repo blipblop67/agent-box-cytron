@@ -48,13 +48,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def _no_search_indexing(request: Request, call_next):
-    """Anyone who's set up DuckDNS/Tailscale/similar has given this hub a
-    real, public-format DNS name - it's still only reachable from their own
-    network by default, but this is a standard, cheap belt-and-suspenders
-    step: telling any search engine that somehow does reach it (a
-    misconfigured router later, a VPN split wrong, etc.) not to index
-    anything. Costs nothing for the overwhelming majority of installs
-    where this never mattered in the first place."""
+    """Standard, cheap belt-and-suspenders hardening for any admin-style
+    tool: tells any search engine that somehow reaches this hub not to
+    index anything. Costs nothing for the overwhelming majority of
+    installs where this was never actually reachable from outside the
+    LAN in the first place."""
     response = await call_next(request)
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response

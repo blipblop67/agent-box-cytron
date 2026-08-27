@@ -37,12 +37,10 @@ export default function SettingsPage() {
       )}
 
       <LlmSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
-      <GoogleSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
-      <DuckDnsSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <ServiceAccountCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <SmtpSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
-      <ServiceAccountCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <UpdatesCard isAdmin={isAdmin} />
     </div>
   )
@@ -132,212 +130,6 @@ function LlmSettingsCard({ settings, setSettings, isAdmin }) {
         </div>
       )}
     </form>
-  )
-}
-
-function GoogleSettingsCard({ settings, setSettings, isAdmin }) {
-  const [clientId, setClientId] = useState(settings.google_client_id)
-  const [clientSecret, setClientSecret] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  async function handleSave(e) {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const body = { google_client_id: clientId }
-      if (clientSecret) body.google_client_secret = clientSecret
-      setSettings(await api.put('/settings', body))
-      setClientSecret('')
-      setSaved(true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
-      <div>
-        <h2 className="text-sm font-semibold text-ink">Google integration (Gmail + Drive + Calendar + Sheets)</h2>
-        <p className="mt-0.5 text-xs text-ink-muted">
-          The <b>hub-wide default</b> Google app - everyone's Gmail/Drive/Calendar connections use
-          this unless they've set up their own on their{' '}
-          <Link to="/account" className="text-copper hover:underline">Account page</Link> instead,
-          which then wins just for them. One OAuth client here covers the whole team; create it at{' '}
-          <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
-            console.cloud.google.com <ExternalLink size={10} className="inline" />
-          </a>{' '}
-          - enable the Gmail, Drive, Calendar, and Sheets APIs, add yourself as a test user, then paste the
-          client ID/secret below.
-        </p>
-      </div>
-
-      <Field label="Client ID">
-        <TextInput disabled={!isAdmin} value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="123456-abc.apps.googleusercontent.com" />
-      </Field>
-
-      <Field label="Client secret" hint={settings.google_client_secret_configured ? undefined : 'No secret configured yet'}>
-        <div className="flex items-center gap-2">
-          <TextInput
-            disabled={!isAdmin}
-            type="password"
-            value={clientSecret}
-            onChange={(e) => setClientSecret(e.target.value)}
-            placeholder={settings.google_client_secret_configured ? '••••••••••••  (leave blank to keep current secret)' : 'GOCSPX-...'}
-          />
-          {settings.google_client_secret_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
-        </div>
-      </Field>
-
-      <div className="space-y-2 rounded-md border border-line-strong bg-surface-raised p-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-          Redirect URIs - add all four to the OAuth client above
-        </p>
-        <RedirectUriRow label="Gmail" value={settings.google_email_redirect_uri} />
-        <RedirectUriRow label="Drive" value={settings.google_drive_redirect_uri} />
-        <RedirectUriRow label="Calendar" value={settings.google_calendar_redirect_uri} />
-        <RedirectUriRow label="Sheets" value={settings.google_sheets_redirect_uri} />
-      </div>
-
-      {settings.google_oauth_redirect_warning && (
-        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-dim px-3 py-2.5 text-xs text-danger">
-          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
-          <span>{settings.google_oauth_redirect_warning}</span>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div className="flex items-center gap-3 pt-1">
-          <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-          {saved && <span className="text-xs text-signal">Saved</span>}
-        </div>
-      )}
-    </form>
-  )
-}
-
-function DuckDnsSettingsCard({ settings, setSettings, isAdmin }) {
-  const [subdomain, setSubdomain] = useState(settings.duckdns_subdomain || '')
-  const [token, setToken] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [saveError, setSaveError] = useState(null)
-  const [updating, setUpdating] = useState(false)
-  const [updateResult, setUpdateResult] = useState(null)
-
-  async function handleSave(e) {
-    e.preventDefault()
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const updated = await api.put('/settings', { duckdns_subdomain: subdomain, duckdns_token: token || undefined })
-      setSettings(updated)
-      setToken('')
-      setSaved(true)
-    } catch (err) {
-      setSaveError(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleUpdateNow() {
-    setUpdating(true)
-    setUpdateResult(null)
-    try {
-      const result = await api.post('/settings/duckdns/update-now', {})
-      setUpdateResult({ ok: true, message: `Pointed ${result.domain} at ${result.ip}.` })
-      setSettings((s) => ({ ...s, duckdns_last_updated_ip: result.ip, duckdns_last_updated_at: Date.now() / 1000 }))
-    } catch (err) {
-      setUpdateResult({ ok: false, message: err.message })
-    } finally {
-      setUpdating(false)
-    }
-  }
-
-  return (
-    <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
-      <div>
-        <h2 className="text-sm font-semibold text-ink">Free remote domain (DuckDNS)</h2>
-        <p className="mt-1 text-xs text-ink-muted">
-          The actual permanent fix for the warning above, not a one-time workaround: a free domain
-          name that always points at this hub, even if its local IP ever changes. Get a free account
-          and token at <a href="https://www.duckdns.org" target="_blank" rel="noreferrer" className="text-copper hover:underline">duckdns.org</a> (sign
-          in with an existing Google/GitHub account, no email needed), pick any subdomain name, and
-          paste both below - the hub keeps it updated automatically from then on, checking every few
-          minutes in the background.
-        </p>
-      </div>
-
-      <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2.5 text-xs text-ink-muted">
-        <span className="font-medium text-ink">This doesn't put anything on the public internet.</span>{' '}
-        It only gives this hub a name Google will accept - the hub itself is still only reachable by
-        devices on your own network, exactly as before. Nobody gets in without a real account and
-        password either way. If you specifically want to restrict this to a handful of named
-        devices (not just "anyone on this network with a login"),{' '}
-        <a href="https://tailscale.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
-          Tailscale
-        </a>{' '}
-        is a good fit for that - a different tool from this card, worth looking into separately.
-      </div>
-
-      {settings.duckdns_configured && (
-        <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
-          <div className="flex items-center gap-2">
-            <CircleCheck size={13} className="text-signal shrink-0" />
-            <span className="text-ink">
-              http://{settings.duckdns_subdomain}.duckdns.org — use this address for Google sign-in
-            </span>
-          </div>
-          {settings.duckdns_last_updated_at ? (
-            <p className="mt-1 text-ink-faint">
-              Last pointed at {settings.duckdns_last_updated_ip} ({relativeTime(settings.duckdns_last_updated_at)})
-            </p>
-          ) : (
-            <p className="mt-1 text-ink-faint">Not updated yet - click "Update now" below</p>
-          )}
-          {settings.duckdns_last_error && <p className="mt-1 text-danger">{settings.duckdns_last_error}</p>}
-        </div>
-      )}
-
-      {isAdmin && (
-        <form onSubmit={handleSave} className="space-y-3">
-          <Field label="Subdomain" hint="Just the name you picked on DuckDNS, not the full domain">
-            <div className="flex items-center gap-2">
-              <TextInput value={subdomain} onChange={(e) => setSubdomain(e.target.value)} placeholder="sirim-agenthub" />
-              <span className="whitespace-nowrap text-xs text-ink-faint">.duckdns.org</span>
-            </div>
-          </Field>
-          <Field label="Token" hint={settings.duckdns_token_configured ? undefined : 'From your DuckDNS account page'}>
-            <div className="flex items-center gap-2">
-              <TextInput
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder={settings.duckdns_token_configured ? '••••••••••••  (leave blank to keep current token)' : ''}
-              />
-              {settings.duckdns_token_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
-            </div>
-          </Field>
-          {saveError && <p className="text-xs text-danger">{saveError}</p>}
-          <div className="flex items-center gap-3">
-            <Button type="submit" variant="primary" disabled={!subdomain || saving}>{saving ? 'Saving…' : 'Save'}</Button>
-            {saved && <span className="text-xs text-signal">Saved</span>}
-          </div>
-        </form>
-      )}
-
-      {isAdmin && settings.duckdns_configured && (
-        <div className="space-y-2 border-t border-line pt-4">
-          <Button variant="secondary" size="sm" onClick={handleUpdateNow} disabled={updating}>
-            {updating ? 'Updating…' : 'Update now'}
-          </Button>
-          {updateResult && (
-            <p className={`text-xs ${updateResult.ok ? 'text-signal' : 'text-danger'}`}>{updateResult.message}</p>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -610,8 +402,9 @@ function ServiceAccountCard({ settings, setSettings, isAdmin }) {
     setTesting(true)
     setTestResult(null)
     try {
-      await api.post('/settings/test-impersonation', { impersonate: testEmail, scope: testScope })
-      setTestResult({ ok: true, message: `Success - this service account can act as ${testEmail} for ${testScope}.` })
+      await api.post('/settings/test-impersonation', { impersonate: testEmail || null, scope: testScope })
+      const who = testEmail ? `act as ${testEmail}` : "use its own identity"
+      setTestResult({ ok: true, message: `Success - this service account can ${who} for ${testScope}.` })
     } catch (err) {
       setTestResult({ ok: false, message: err.message })
     } finally {
@@ -622,16 +415,25 @@ function ServiceAccountCard({ settings, setSettings, isAdmin }) {
   return (
     <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
       <div>
-        <h2 className="text-sm font-semibold text-ink">Google service account (domain-wide delegation)</h2>
+        <h2 className="text-sm font-semibold text-ink">Google (Gmail / Drive / Calendar / Sheets)</h2>
         <p className="mt-1 text-xs text-ink-muted">
-          A different way for a flow to act as a specific Google Workspace person - one that skips
-          the "connect your Gmail" consent flow entirely. Instead of each person clicking Connect,
-          a Workspace super admin authorizes this one service account, in the Admin Console, to act
-          as anyone in your organization for specific Google services. Once set up, an Email,
-          Drive, Calendar, or Sheets node's "Impersonate" field can target any address in your
-          Workspace directly. This is a bigger trust decision than a personal connection - this one
-          credential can act as anyone in your domain, for whatever's been authorized - so treat the
-          key file the same way you'd treat any admin credential.
+          One hub-wide service account key - no per-person "Connect" button, no consent screen,
+          no redirect address to get right. Create a service account in{' '}
+          <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            Google Cloud Console <ExternalLink size={10} className="inline" />
+          </a>{' '}
+          (IAM & Admin → Service Accounts → Keys → Add Key → JSON), paste the whole file below.
+          Every Email/Drive/Calendar/Sheets node then has an optional <strong className="text-ink">Impersonate</strong> field:
+          leave it blank and the node acts as the service account's own identity (its own Drive
+          space, anything shared with its email address); set it to a real address in your Google
+          Workspace to act as that specific person instead - for that, a Workspace super admin also
+          needs to authorize this service account for domain-wide delegation, once, in the{' '}
+          <a href="https://admin.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            Admin Console <ExternalLink size={10} className="inline" />
+          </a>{' '}
+          (a different console from Cloud Console, and a separate step from creating the key).
+          Worth being deliberate about who controls this key - it's a bigger trust decision than a
+          personal login, since it can act as anyone your Workspace admin authorizes it for.
         </p>
       </div>
 
@@ -668,20 +470,20 @@ function ServiceAccountCard({ settings, setSettings, isAdmin }) {
       {isAdmin && settings.google_service_account_configured && (
         <form onSubmit={handleTest} className="space-y-2 border-t border-line pt-4">
           <p className="text-xs font-medium text-ink-muted">
-            Confirm domain-wide delegation actually works before relying on it in a real flow
+            Confirm this actually works before relying on it in a real flow
           </p>
           <div className="flex items-center gap-2">
             <TextInput
               type="email"
               value={testEmail}
               onChange={(e) => setTestEmail(e.target.value)}
-              placeholder="hairil@cytron.io"
+              placeholder="hairil@cytron.io (blank tests the service account's own identity)"
             />
             <Select value={testScope} onChange={(e) => setTestScope(e.target.value)} className="w-32">
               <option value="gmail">Gmail</option>
               <option value="sheets">Sheets</option>
             </Select>
-            <Button type="submit" variant="secondary" size="sm" disabled={!testEmail || testing}>
+            <Button type="submit" variant="secondary" size="sm" disabled={testing}>
               {testing ? 'Testing…' : 'Test'}
             </Button>
           </div>

@@ -170,12 +170,12 @@ def _execute_email_node(data: dict, node_input: str, run_input: str, user_id: st
             raise ValueError("This Email node has no recipient configured")
         subject = data.get("subject") or "(no subject)"
         body = node_input or data.get("body") or run_input
-        result = gmail_client.send_email(user_id, to=to, subject=subject, body=body, impersonate=impersonate)
+        result = gmail_client.send_email(to=to, subject=subject, body=body, impersonate=impersonate)
         return f"Sent to {to} (message id: {result.get('id')})"
     if action == "search":
         query = data.get("query") or node_input or run_input
         messages = gmail_client.list_messages(
-            user_id, query=query, max_results=data.get("max_results") or 5, impersonate=impersonate,
+            query=query, max_results=data.get("max_results") or 5, impersonate=impersonate,
         )
         if not messages:
             return "(no matching emails found)"
@@ -188,7 +188,7 @@ def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: st
     action = data.get("action", "list")
     if action == "list":
         search = data.get("search") or node_input or run_input
-        files = drive_client.list_files(user_id, search=search, max_results=data.get("max_results") or 10, impersonate=impersonate)
+        files = drive_client.list_files(search=search, max_results=data.get("max_results") or 10, impersonate=impersonate)
         if not files:
             return "(no matching files found)"
         return "\n".join(f"{f['name']} ({f['mimeType']}) - id: {f['id']}" for f in files)
@@ -196,12 +196,12 @@ def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: st
         file_id = data.get("file_id")
         if not file_id:
             raise ValueError("This Drive node has no file selected to read")
-        result = drive_client.read_file_content(user_id, file_id, impersonate=impersonate)
+        result = drive_client.read_file_content(file_id, impersonate=impersonate)
         return result["content"]
     if action == "create":
         name = data.get("name") or "agent-output.txt"
         content = node_input or data.get("content") or run_input
-        result = drive_client.create_file(user_id, name=name, content=content,
+        result = drive_client.create_file(name=name, content=content,
                                            mime_type=data.get("mime_type") or "text/plain", impersonate=impersonate)
         return f"Created '{result['name']}' (id: {result['id']})"
     raise ValueError(f"Unknown drive action '{action}'")
@@ -211,7 +211,7 @@ def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id:
     impersonate = data.get("impersonate") or None
     action = data.get("action", "list")
     if action == "list":
-        events = calendar_client.list_events(user_id, max_results=data.get("max_results") or 10, impersonate=impersonate)
+        events = calendar_client.list_events(max_results=data.get("max_results") or 10, impersonate=impersonate)
         if not events:
             return "(no upcoming events found)"
         lines = []
@@ -231,7 +231,7 @@ def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id:
         attendees_raw = data.get("attendees") or ""
         attendees = [a.strip() for a in attendees_raw.split(",") if a.strip()] or None
         result = calendar_client.create_event(
-            user_id, summary=summary, start=start, end=end,
+            summary=summary, start=start, end=end,
             description=description, location=data.get("location") or "",
             timezone_name=data.get("timezone_name") or "UTC", attendees=attendees, impersonate=impersonate,
         )
@@ -250,7 +250,7 @@ def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: s
         headers = [h.strip() for h in (data.get("headers") or "").split(",") if h.strip()]
         try:
             result = sheets_client.create_spreadsheet(
-                user_id, title, headers or None, data.get("sheet_name") or "Sheet1", impersonate=impersonate,
+                title, headers or None, data.get("sheet_name") or "Sheet1", impersonate=impersonate,
             )
         except sheets_client.SheetsError as exc:
             raise ValueError(str(exc)) from exc
@@ -263,7 +263,7 @@ def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: s
 
     if action == "read":
         try:
-            rows = sheets_client.read_rows(user_id, spreadsheet_id, sheet_name, impersonate=impersonate)
+            rows = sheets_client.read_rows(spreadsheet_id, sheet_name, impersonate=impersonate)
         except sheets_client.SheetsError as exc:
             raise ValueError(str(exc)) from exc
         if not rows:
@@ -280,10 +280,10 @@ def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: s
             for line in lines:
                 values = [v.strip() for v in line.split("|")]
                 if action == "upsert_row":
-                    result = sheets_client.upsert_row(user_id, spreadsheet_id, sheet_name, values, impersonate=impersonate)
+                    result = sheets_client.upsert_row(spreadsheet_id, sheet_name, values, impersonate=impersonate)
                     summaries.append(f"{result['action']} row {result['row']} for '{result['key']}'")
                 else:
-                    sheets_client.append_row(user_id, spreadsheet_id, sheet_name, values, impersonate=impersonate)
+                    sheets_client.append_row(spreadsheet_id, sheet_name, values, impersonate=impersonate)
                     summaries.append(f"appended: {' | '.join(values)}")
         except sheets_client.SheetsError as exc:
             raise ValueError(str(exc)) from exc

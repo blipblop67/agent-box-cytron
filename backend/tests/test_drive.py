@@ -1,8 +1,10 @@
 """
-Exercises the whole Drive integration - connect, list, read (both a plain
-file and a native Google Doc export), create, update - without touching real
-Google servers. Run with: python3 tests/test_drive.py
+Exercises the Drive integration - list, read (both a plain file and a
+native Google Doc export), create, update - via the hub-wide service
+account, without touching real Google servers.
+Run with: python3 tests/test_drive.py
 """
+import json as json_module
 import os
 import sys
 import tempfile
@@ -10,11 +12,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("AGENT_HUB_DATA_DIR", tempfile.mkdtemp(prefix="agent-hub-drive-test-"))
-os.environ.setdefault("GOOGLE_CLIENT_ID", "test-client-id")
-os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-client-secret")
-os.environ.setdefault("GOOGLE_DRIVE_REDIRECT_URI", "http://localhost:8811/api/drive/auth/callback")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db  # noqa: E402
@@ -22,6 +23,17 @@ from app.main import app  # noqa: E402
 from _auth_helper import auth_headers  # noqa: E402
 
 db.init_db()
+
+_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+SERVICE_ACCOUNT_KEY = json_module.dumps({
+    "type": "service_account",
+    "client_email": "sa@sirim-coc-agent.iam.gserviceaccount.com",
+    "private_key": _private_key.private_bytes(
+        encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode(),
+    "private_key_id": "fake-key-id",
+})
 
 FILES = {
     "doc-1": {  # a native Google Doc - needs /export, not /files/{id}?alt=media
@@ -53,14 +65,8 @@ class FakeResponse:
 
 def fake_post(url, data=None, json=None, headers=None, params=None, **kwargs):
     if url == "https://oauth2.googleapis.com/token":
-        if data["grant_type"] == "authorization_code":
-            assert data["code"] == "fake-drive-code"
-            return FakeResponse({"access_token": "at-1", "refresh_token": "rt-drive-1", "expires_in": 3600})
-        if data["grant_type"] == "refresh_token":
-            assert data["refresh_token"] == "rt-drive-1"
-            return FakeResponse({"access_token": "at-fresh", "expires_in": 3600})
+        return FakeResponse({"access_token": "impersonated-token", "expires_in": 3600})
     if url == "https://www.googleapis.com/drive/v3/files" and json is not None:
-        # file creation (metadata step)
         new_id = "created-1"
         FILES[new_id] = {"id": new_id, "name": json["name"], "mimeType": json["mimeType"],
                           "modifiedTime": "2026-07-28T00:00:00Z", "webViewLink": f"https://drive.google.com/{new_id}"}
@@ -69,6 +75,7 @@ def fake_post(url, data=None, json=None, headers=None, params=None, **kwargs):
 
 
 def fake_patch(url, headers=None, params=None, content=None, **kwargs):
+    assert headers["Authorization"] == "Bearer impersonated-token"
     assert url.startswith("https://www.googleapis.com/upload/drive/v3/files/")
     file_id = url.rsplit("/", 1)[-1]
     DOWNLOADS[file_id] = content.decode()
@@ -76,9 +83,7 @@ def fake_patch(url, headers=None, params=None, content=None, **kwargs):
 
 
 def fake_get(url, headers=None, params=None, **kwargs):
-    if url == "https://www.googleapis.com/oauth2/v3/userinfo":
-        assert headers["Authorization"] == "Bearer at-1"
-        return FakeResponse({"email": "priya@example.com"})
+    assert headers["Authorization"] == "Bearer impersonated-token"
 
     if url == "https://www.googleapis.com/drive/v3/files" and "q" in (params or {}):
         assert "trashed = false" in params["q"]
@@ -100,35 +105,23 @@ def fake_get(url, headers=None, params=None, **kwargs):
 
 
 def main():
+    client = TestClient(app)
+    headers = auth_headers(client, "Priya")
+
+    unconfigured = client.get("/api/drive/files", headers=headers)
+    assert unconfigured.status_code == 400 and "service account" in unconfigured.text.lower()
+    print("[ok] a clear error when no service account is configured yet")
+
+    client.put("/api/settings", headers=headers, json={"google_service_account_key": SERVICE_ACCOUNT_KEY})
+    print("[ok] admin configured the service account key")
+
     with patch("httpx.post", side_effect=fake_post), \
          patch("httpx.get", side_effect=fake_get), \
          patch("httpx.patch", side_effect=fake_patch):
-        client = TestClient(app)
-        headers = auth_headers(client, "Priya")
-
-        assert client.get("/api/drive/status", headers=headers).json() == {"connected": False}
-        print("[ok] starts disconnected")
-
-        start = client.get("/api/drive/auth/start", headers=headers).json()
-        assert "drive.readonly" in start["authorization_url"]
-        assert "drive.file" in start["authorization_url"]
-        state = start["authorization_url"].split("state=")[1].split("&")[0]
-        print("[ok] auth/start requested readonly + file scopes")
-
-        callback = client.get(
-            "/api/drive/auth/callback",
-            params={"code": "fake-drive-code", "state": state},
-            follow_redirects=False,
-        )
-        assert callback.status_code in (302, 307), callback.status_code
-
-        status = client.get("/api/drive/status", headers=headers).json()
-        assert status["connected"] and status["account_email"] == "priya@example.com"
-        print(f"[ok] connected as {status['account_email']}")
 
         files = client.get("/api/drive/files", headers=headers).json()
         assert {f["id"] for f in files} == {"doc-1", "plain-1"}
-        print(f"[ok] listed {len(files)} files")
+        print(f"[ok] listed {len(files)} files, acting as the service account itself (no impersonate given)")
 
         doc_content = client.get("/api/drive/files/doc-1/content", headers=headers).json()
         assert doc_content["content"] == EXPORTS["doc-1"]
@@ -153,10 +146,6 @@ def main():
         assert updated["id"] == created["id"]
         assert DOWNLOADS[created["id"]] == "updated content"
         print("[ok] updated the file's content")
-
-        client.delete("/api/drive/auth", headers=headers)
-        assert client.get("/api/drive/status", headers=headers).json() == {"connected": False}
-        print("[ok] disconnect works")
 
     print("\nAll Drive smoke tests passed.")
 

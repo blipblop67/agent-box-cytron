@@ -1,8 +1,11 @@
 """
-Proves per-user overrides actually take priority: a personal Google app
-takes over the OAuth flow for that user (and only that user - a teammate
-without one still uses the hub default), and a personal OpenRouter key gets
-used by a flow that user runs instead of the hub-wide key.
+Proves per-user overrides actually take priority: a personal OpenRouter
+key gets used by a flow that user runs instead of the hub-wide key, and a
+teammate without one still uses the hub default.
+
+Google has no personal-override concept anymore - it's a single hub-wide
+service account (see test_service_account_impersonation.py), which isn't
+the kind of credential that makes sense to have a personal alternative to.
 Run with: python3 tests/test_personal_settings.py
 """
 import os
@@ -44,44 +47,22 @@ def fake_llm_post(url, headers=None, json=None, **kwargs):
 def main():
     client = TestClient(app)
     headers = auth_headers(client, "Alex")  # first user -> admin, sets the hub-wide defaults
-    sam_headers = auth_headers(client, "Sam")  # a regular member with no personal Google app
+    sam_headers = auth_headers(client, "Sam")  # a regular member with no personal key
 
     client.put("/api/settings", headers=headers, json={
         "llm_provider": "openrouter", "openrouter_api_key": "hub-wide-key", "openrouter_model": "hub/model",
     })
-    client.put("/api/settings", headers=headers, json={
-        "google_client_id": "hub-wide-client-id", "google_client_secret": "hub-wide-secret",
-    })
 
-    # --- before setting anything personal, Alex's Account page shows the hub defaults aren't personal ones ---
+    # --- before setting anything personal, Alex's Account page shows nothing personal is set ---
     personal = client.get("/api/account/settings", headers=headers).json()
-    assert personal["google_client_id"] == ""
     assert personal["openrouter_key_configured"] is False
     print("[ok] personal settings start empty even though hub-wide ones are set")
-
-    # --- Alex sets up their OWN Google app ---
-    updated = client.put("/api/account/settings", headers=headers, json={
-        "google_client_id": "alex-personal-client-id", "google_client_secret": "alex-personal-secret",
-    }).json()
-    assert updated["google_client_id"] == "alex-personal-client-id"
-    print("[ok] Alex configured a personal Google app")
-
-    # --- Alex's Gmail connect flow now uses THEIR OWN client id, not the hub's ---
-    start = client.get("/api/email/auth/start", headers=headers).json()
-    assert "alex-personal-client-id" in start["authorization_url"]
-    assert "hub-wide-client-id" not in start["authorization_url"]
-    print("[ok] Alex's own Google app is used for Alex's Gmail connect flow")
-
-    # --- Sam, who has NOT set a personal Google app, still uses the hub-wide one ---
-    sam_start = client.get("/api/email/auth/start", headers=sam_headers).json()
-    assert "hub-wide-client-id" in sam_start["authorization_url"]
-    assert "alex-personal-client-id" not in sam_start["authorization_url"]
-    print("[ok] Sam (no personal app) falls back to the hub-wide Google app")
 
     # --- Alex sets a personal OpenRouter key + model ---
     client.put("/api/account/settings", headers=headers, json={
         "openrouter_api_key": "alex-personal-key", "openrouter_model": "alex/preferred-model",
     })
+    print("[ok] Alex configured a personal OpenRouter key")
 
     # --- a flow Alex runs uses Alex's personal key/model ---
     flow = client.post("/api/flows", headers=headers, json={"name": "Personal key test"}).json()
@@ -116,7 +97,6 @@ def main():
     # --- the personal secret itself is never returned by the API ---
     check = client.get("/api/account/settings", headers=headers).json()
     assert "alex-personal-key" not in str(check)
-    assert "alex-personal-secret" not in str(check)
     assert check["openrouter_key_configured"] is True
     print("[ok] personal secrets never appear in API responses, only a 'configured' flag")
 

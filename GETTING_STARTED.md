@@ -182,11 +182,12 @@ Pick **OpenRouter** or **Ollama**.
 
 ### Google integration (Gmail + Drive + Calendar + Sheets)
 
-Only needed if you want any of those four nodes to work. This is the
-fiddliest part of setup — not because it's complicated, but because
-Google's console has a few easy-to-miss steps. Full walkthrough in
-[Section 9](#9-connecting-your-tools-connections-page); once you've done
-it, paste the Client ID and Secret into this card.
+Only needed if you want any of those four nodes to work. Not an OAuth
+client this time — a service account key, which sidesteps the fiddliest
+part entirely (no consent screen, no redirect address to get right).
+Full walkthrough in [Section 9](#9-connecting-your-tools-connections-page);
+once you've created the key in Google Cloud Console, paste its entire
+JSON contents into this card.
 
 ### Web search
 
@@ -290,15 +291,14 @@ deliver the answer twice.
 
 ## 9. Connecting your tools (Connections page)
 
-Two very different models live on this one page, and it's worth knowing
-which is which before you start connecting things:
+**Gmail, Drive, Calendar, and Sheets are hub-wide, not per-person** — one
+Google service account, set up once by an admin, that every flow uses.
+A node's **Impersonate** field decides what it acts as for that one
+call: left blank, the service account's own identity; set to a real
+address, that specific person (needs a Workspace admin's one-time
+sign-off — Section 9 below covers exactly when that's needed).
 
-**Gmail, Drive, Calendar, and Sheets are personal, per-account
-connections** — a tool node acts as whoever runs the flow. If you and a
-teammate both have a flow that sends email, it sends from *your* Gmail
-when you run it and *theirs* when they run it.
-
-**Telegram bots are a shared resource, not a personal connection** — a bot
+**Telegram bots are a shared resource, working the same way** — a bot
 belongs to whichever flow it's wired into, regardless of who runs that
 flow. This is what lets a Customer Support flow and a completely separate
 Sales flow message through two different bots even if the same person
@@ -306,77 +306,47 @@ built both.
 
 ### Setting up Google (Gmail / Drive / Calendar / Sheets)
 
-Do this once per deployment, as the admin, in
-[Google Cloud Console](https://console.cloud.google.com):
+One hub-wide service account, not a per-person "Connect" flow — no
+consent screen, no redirect address to get right, nothing that depends
+on how you're reaching the hub. Do this once, as the admin:
 
-1. **Create a project.**
-2. **Enable four APIs**: APIs & Services → Library → search for and
-   enable **Gmail API**, **Google Drive API**, **Google Calendar API**,
-   and **Google Sheets API** — all four, even if you only plan to use one
-   right now. Skipping this makes connecting *look* like it worked, but
-   every actual send/read/write call afterward fails.
-3. **Configure the OAuth consent screen**: User Type "External" (unless
-   you're on Google Workspace), fill in the required fields. While it's in
-   **Testing** mode (the default), Google silently blocks sign-in for
-   anyone not listed under **Test users** on that same page — add every
-   team member's Google account there. This is, by a wide margin, the
-   most common reason "Connect" just doesn't work.
-4. **Create one OAuth client ID**: Credentials → Create Credentials →
-   OAuth client ID → type "Web application." All four Google services
-   share this one client. Leave this browser tab open.
-5. Back on the hub's **Settings** page, paste in the Client ID and
-   Secret, then copy the four redirect URIs shown there into the OAuth
-   client you just created in Google Cloud Console (a "Copy" button sits
-   next to each). Save both sides.
-6. Each team member connects whichever of the four they personally want
-   from the **Connections** page. First time, Google shows an
-   "unverified app" warning — expected for a project that hasn't gone
-   through Google's review; click **Advanced → Go to (app name)**.
+1. In [Google Cloud Console](https://console.cloud.google.com), create a
+   project (or use an existing one).
+2. **Enable whichever APIs you actually need**: APIs & Services →
+   Library → search for and enable **Gmail API**, **Google Drive API**,
+   **Google Calendar API**, and/or **Google Sheets API**.
+3. **IAM & Admin → Service Accounts → Create Service Account.** Name it
+   whatever's clear (e.g. "agent-hub"). No roles need to be granted here.
+4. Open the new service account → **Keys → Add Key → Create new key →
+   JSON**. This downloads the only copy of the private key.
+5. Back on the hub's **Settings** page, find the **Google (Gmail / Drive
+   / Calendar / Sheets)** card → paste the entire contents of that JSON
+   file → Save. It should show "Configured" with the service account's
+   own email.
+6. On any Email/Drive/Calendar/Sheets node in a flow, there's now an
+   **Impersonate** field. Leave it blank and the node acts as the
+   service account's own identity — this works immediately for
+   Drive/Sheets/Calendar (its own space, or anything explicitly shared
+   with its email address, the same way you'd share a folder with a
+   colleague). Gmail specifically has no real inbox for a plain service
+   account, so an Email node needs step 7 below.
+7. **To act as a specific real person** (needed for Gmail, optional for
+   the others): a Google Workspace super admin authorizes this exact
+   service account, once, in the **Workspace Admin Console**
+   (admin.google.com — a different site from Cloud Console, needing
+   different, higher access) → Security → Access and data control → API
+   controls → Domain-wide delegation → Add new. Paste the service
+   account's **Client ID** (on its detail page in Cloud Console, labeled
+   "Unique ID"), and the specific scopes needed (the Settings card lists
+   the exact scope string per service) → Authorize.
+8. Back on the Settings card, use **Test** to confirm it actually works
+   — with an email address to test impersonation, or blank to test the
+   service account's own identity — before wiring it into a real flow.
 
-**Before you paste redirect URIs into step 5, read this if the Settings
-page shows a red warning above them.** Google's OAuth client will only
-ever accept a redirect URI whose host is `localhost`/`127.0.0.1`, or a
-domain with a real, ownable public suffix — which flatly rejects the two
-most common ways this hub is actually reached: the default `.local` mDNS
-name (`agenthub.local`) and a raw LAN IP address. This isn't a bug in
-this hub or a mistake you made; it's a hard limit of what Google's OAuth
-setup will ever accept, and it produces a genuinely confusing error
-("must use a domain that is a valid top private domain") that gives no
-hint why. The Settings and Account pages detect this automatically and
-warn you before you waste a trip through Google Cloud Console over it.
-
-**The fix — Settings → "Free remote domain (DuckDNS)"**: a free account
-at [duckdns.org](https://www.duckdns.org) (sign in with an existing
-Google/GitHub account, no email needed) gets you a token; pick any
-subdomain, paste both into that card, and the hub takes care of the rest
-— it keeps that domain pointed at itself automatically from then on,
-checking every few minutes in the background, so it keeps working even
-if the Pi's IP ever changes after a reboot. Once it's set up, the warning
-banner switches to telling you the exact address to use, and every future
-Google connection (any service, anyone on the team) just works through
-it — nothing to remember or redo.
-
-**This doesn't put the hub on the public internet.** A DuckDNS name
-points at the hub's ordinary private network address — the same address
-only devices on your own Wi-Fi/LAN could ever reach before. Someone
-outside your network looking up that name gets back an address that
-means nothing on their own network; there's nothing new to reach. Who
-can access the hub stays exactly the same as before setting this up:
-anyone on your network, with a real account and password — DuckDNS just
-gives that same group a name Google will also accept. If you specifically
-want to restrict access to a handful of named devices rather than "anyone
-on this network with a login," [Tailscale](https://tailscale.com) is
-built for that — a separate tool from DuckDNS, worth looking into if
-that's genuinely what you need.
-
-If DuckDNS genuinely isn't an option, a one-time fallback: **do the
-Connect step from a browser on the hub's own machine**, using
-`http://localhost:8811` — Google's other real exception, no domain
-needed. From another machine, an SSH local port-forward
-(`ssh -L 8811:localhost:8811 you@pi`) gets you there without physically
-sitting at the Pi. This only covers that one Connect click though, so
-it's worth setting up DuckDNS instead if more than a couple of
-connections are ever expected.
+This is a bigger trust decision than the old "everyone connects their
+own account" model would have been: whoever controls this one key can
+make it act as anyone a Workspace admin has authorized it for, not just
+themselves. That's exactly why it's admin-only to set up.
 
 ### Setting up Telegram bots
 
@@ -460,7 +430,8 @@ need.
 - **Student Learning Assistant** — a tutor that checks understanding
   rather than just handing over answers. Genuinely needs Chat, not Run.
 - **Personal Productivity Coach** — pulls your next few Calendar events as
-  context for every check-in. Needs Google Calendar connected.
+  context for every check-in. Needs the Calendar node's Impersonate field
+  set to your address (Section 9).
 
 **Content research:**
 - **YouTube Video Idea Generator** — searches a topic on YouTube, proposes
@@ -471,10 +442,11 @@ need.
 - Reads certification-related emails, extracts what changed for each
   application, and keeps a Google Sheet current — updating the existing
   row for an application already being tracked instead of creating a
-  duplicate. Needs Gmail and Sheets connected, plus the one-time
-  spreadsheet-setup step described in [Section 10](#10-the-node-reference).
-  Put it on a Schedule once it's working, for a tracker that keeps itself
-  current with no one touching it.
+  duplicate. Needs the Google service account set up (Section 9), plus
+  the one-time spreadsheet-setup step described in
+  [Section 10](#10-the-node-reference). Put it on a Schedule once it's
+  working, for a tracker that keeps itself current with no one touching
+  it.
 
 ## 12. Team management
 
@@ -507,9 +479,6 @@ all of it.
   account specifically.
 - **Password** — change it any time; this signs you out of every other
   active session.
-- **Your own Google app** — if you'd rather not trust the hub admin's
-  OAuth client with your Google account, set up your own the same way
-  (Section 9), paste your own Client ID/Secret here instead.
 - **Your own OpenRouter key and model** — takes over for flows *you*
   personally run, so your usage bills to your own account rather than a
   shared one. Other people running the same flow are unaffected.
@@ -576,17 +545,24 @@ address:**
 **`agenthub.local` doesn't resolve, but the IP address works fine:** some
 networks block mDNS specifically — just use the IP going forward.
 
-**"I click Connect [for a Google service] and it just fails":** almost
-always one of: the specific API isn't enabled in Google Cloud Console, or
-your Google account isn't added under Test Users on the OAuth consent
-screen. Both covered in Section 9.
+**"Not configured yet" on a Google node even after saving a service
+account key:** double check the entire JSON file was pasted (not just
+part of it) and that the Settings card actually shows "Configured" with
+an email address after saving — if it doesn't, the key was rejected;
+the error message on save says why.
 
-**Google Cloud Console rejects a redirect URI with "must use a domain
-that is a valid top private domain" or "must end with a public
-top-level domain":** you're pasting in a `.local` address or a raw LAN
-IP — Google's OAuth setup never accepts either. See the callout in
-Section 9; the Settings page also warns about this automatically before
-you get this far.
+**An Email/Drive/Calendar/Sheets node fails with a Google error
+mentioning "domain-wide delegation" or "unauthorized_client":** the
+Impersonate field is set to a real address, but a Workspace super admin
+hasn't authorized this exact service account for that scope yet in the
+Workspace Admin Console — see Section 9, step 7. Use the "Test" button
+on the Settings card to confirm this specific combination works before
+trusting it in a real flow.
+
+**An Email node fails even with Impersonate left blank:** expected — a
+plain service account has no real inbox of its own for Gmail. Set
+Impersonate to a real Workspace address (needs step 7 above) rather than
+leaving it blank, which only really works for Drive/Sheets/Calendar.
 
 **Checking for updates gives an error:** if it mentions GitHub — a 404
 usually means the configured repo/branch is wrong or private (this check
@@ -622,7 +598,7 @@ Read the node it names; the fix is almost always right there.
 | Card | Fields |
 |---|---|
 | LLM provider | OpenRouter API key + model, or Ollama base URL + model |
-| Google integration | Client ID, Client secret |
+| Google integration | Service account JSON key |
 | Web search | Tavily API key |
 | YouTube search | YouTube API key |
 | Outgoing email | SMTP host, port, username, password, from address, TLS |
@@ -634,7 +610,6 @@ Read the node it names; the fix is almost always right there.
 |---|---|
 | Recovery email | — (used for password reset only) |
 | Password | — |
-| Your own Google app | the hub-wide Google Client ID/Secret |
 | Your own OpenRouter key/model | the hub-wide LLM provider |
 | Your own Tavily key | the hub-wide Web search key |
 | Your own YouTube key | the hub-wide YouTube key |

@@ -1,9 +1,10 @@
 """
-Exercises the Calendar integration end to end: OAuth connect (mocked
-against Google), listing upcoming events, creating a new one, and using
-both from inside a real flow. Mocks only Google's HTTP APIs.
+Exercises the Calendar integration via the hub-wide service account:
+listing upcoming events, creating a new one, and using both from inside a
+real flow. Mocks only Google's HTTP APIs.
 Run with: python3 tests/test_calendar.py
 """
+import json as json_module
 import os
 import sys
 import tempfile
@@ -13,6 +14,8 @@ from unittest.mock import patch
 os.environ.setdefault("AGENT_HUB_DATA_DIR", tempfile.mkdtemp(prefix="agent-hub-calendar-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db  # noqa: E402
@@ -21,10 +24,22 @@ from _auth_helper import auth_headers  # noqa: E402
 
 db.init_db()
 
+_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+SERVICE_ACCOUNT_KEY = json_module.dumps({
+    "type": "service_account",
+    "client_email": "sa@sirim-coc-agent.iam.gserviceaccount.com",
+    "private_key": _private_key.private_bytes(
+        encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode(),
+    "private_key_id": "fake-key-id",
+})
+
 
 class FakeResponse:
-    def __init__(self, json_data):
+    def __init__(self, json_data, status_code=200):
         self._json = json_data
+        self.status_code = status_code
 
     def raise_for_status(self):
         pass
@@ -38,7 +53,7 @@ _created_events = []
 
 def fake_post(url, data=None, json=None, headers=None, **kwargs):
     if url == "https://oauth2.googleapis.com/token":
-        return FakeResponse({"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600})
+        return FakeResponse({"access_token": "impersonated-token", "expires_in": 3600})
     if url == "https://www.googleapis.com/calendar/v3/calendars/primary/events":
         event = {
             "id": f"evt-{len(_created_events) + 1}",
@@ -55,8 +70,7 @@ def fake_post(url, data=None, json=None, headers=None, **kwargs):
 
 
 def fake_get(url, headers=None, params=None, **kwargs):
-    if url == "https://www.googleapis.com/oauth2/v3/userinfo":
-        return FakeResponse({"email": "priya@example.com"})
+    assert headers["Authorization"] == "Bearer impersonated-token"
     if url == "https://www.googleapis.com/calendar/v3/calendars/primary/events":
         return FakeResponse({"items": [
             {
@@ -74,39 +88,22 @@ def main():
     client = TestClient(app)
     headers = auth_headers(client, "Priya")
 
-    # --- not connected yet ---
-    status = client.get("/api/calendar/status", headers=headers).json()
-    assert status == {"connected": False}
-    print("[ok] starts disconnected")
+    unconfigured = client.get("/api/calendar/events", headers=headers)
+    assert unconfigured.status_code == 400 and "service account" in unconfigured.text.lower()
+    print("[ok] a clear error when no service account is configured yet")
 
-    client.put("/api/settings", headers=headers, json={
-        "google_client_id": "test-client-id", "google_client_secret": "test-client-secret",
-    })
+    client.put("/api/settings", headers=headers, json={"google_service_account_key": SERVICE_ACCOUNT_KEY})
+    print("[ok] admin configured the service account key")
 
-    # --- full OAuth connect flow (mocked) ---
-    start = client.get("/api/calendar/auth/start", headers=headers).json()
-    assert "authorization_url" in start
-    state = start["authorization_url"].split("state=")[1].split("&")[0]
-    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get):
-        callback = client.get("/api/calendar/auth/callback", params={"code": "fake-code", "state": state}, follow_redirects=False)
-    assert callback.status_code in (302, 307)
-    print("[ok] OAuth connect flow completed")
-
-    status_after = client.get("/api/calendar/status", headers=headers).json()
-    assert status_after["connected"] is True and status_after["account_email"] == "priya@example.com"
-    print("[ok] now connected as priya@example.com")
-
-    # --- list upcoming events ---
     with patch("httpx.get", side_effect=fake_get), patch("httpx.post", side_effect=fake_post):
-        events = client.get("/api/calendar/events", headers=headers).json()
+        events = client.get("/api/calendar/events", headers=headers, params={"impersonate": "priya@cytron.io"}).json()
     assert len(events) == 1 and events[0]["summary"] == "Team standup"
     print(f"[ok] listed {len(events)} upcoming event(s): \"{events[0]['summary']}\"")
 
-    # --- create a new event ---
     with patch("httpx.post", side_effect=fake_post):
         created = client.post("/api/calendar/events", headers=headers, json={
             "summary": "1:1 with Priya", "start": "2026-09-02T14:00:00", "end": "2026-09-02T14:30:00",
-            "timezone_name": "America/New_York",
+            "timezone_name": "America/New_York", "impersonate": "priya@cytron.io",
         }).json()
     assert created["summary"] == "1:1 with Priya"
     print(f"[ok] created event: \"{created['summary']}\"")
@@ -116,7 +113,9 @@ def main():
     graph = {
         "nodes": [
             {"id": "in", "type": "input", "position": {"x": 0, "y": 0}, "data": {}},
-            {"id": "cal", "type": "calendar", "position": {"x": 200, "y": 0}, "data": {"action": "list", "max_results": 5}},
+            {"id": "cal", "type": "calendar", "position": {"x": 200, "y": 0}, "data": {
+                "action": "list", "max_results": 5, "impersonate": "priya@cytron.io",
+            }},
             {"id": "out", "type": "output", "position": {"x": 400, "y": 0}, "data": {}},
         ],
         "edges": [{"id": "e1", "source": "in", "target": "cal"}, {"id": "e2", "source": "cal", "target": "out"}],
@@ -135,6 +134,7 @@ def main():
             {"id": "in", "type": "input", "position": {"x": 0, "y": 0}, "data": {}},
             {"id": "cal", "type": "calendar", "position": {"x": 200, "y": 0}, "data": {
                 "action": "create", "summary": "Follow-up call", "start": "2026-09-03T10:00:00", "end": "2026-09-03T10:30:00",
+                "impersonate": "priya@cytron.io",
             }},
             {"id": "out", "type": "output", "position": {"x": 400, "y": 0}, "data": {}},
         ],
@@ -163,11 +163,6 @@ def main():
     assert broken_result.status_code == 400
     assert "title, start time, and end time" in str(broken_result.json())
     print("[ok] a Calendar create node missing required fields gives a clear error")
-
-    # --- disconnect ---
-    client.delete("/api/calendar/auth", headers=headers)
-    assert client.get("/api/calendar/status", headers=headers).json() == {"connected": False}
-    print("[ok] disconnect works")
 
     print("\nAll Calendar smoke tests passed.")
 

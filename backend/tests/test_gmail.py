@@ -1,24 +1,24 @@
 """
-Exercises the whole Gmail integration - connect, send, list, read, reply -
-without touching real Google servers or needing real OAuth credentials.
-httpx.get/post are patched with fake responses shaped like Google's actual API,
-so this checks our request construction and response parsing, not Google's
-uptime. Run with: python3 tests/test_gmail.py
+Exercises the Gmail integration - send, list, read, reply - via the hub-wide
+service account, without touching real Google servers. httpx.get/post are
+patched with fake responses shaped like Google's actual APIs (both the
+JWT-bearer token exchange and the Gmail REST calls), so this checks our
+request construction and response parsing, not Google's uptime.
+Run with: python3 tests/test_gmail.py
 """
 import base64
+import json as json_module
 import os
 import sys
 import tempfile
-from email.mime.text import MIMEText
 from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("AGENT_HUB_DATA_DIR", tempfile.mkdtemp(prefix="agent-hub-gmail-test-"))
-os.environ.setdefault("GOOGLE_CLIENT_ID", "test-client-id")
-os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-client-secret")
-os.environ.setdefault("GOOGLE_REDIRECT_URI", "http://localhost:8811/api/email/auth/callback")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db  # noqa: E402
@@ -26,6 +26,17 @@ from app.main import app  # noqa: E402
 from _auth_helper import auth_headers  # noqa: E402
 
 db.init_db()
+
+_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+SERVICE_ACCOUNT_KEY = json_module.dumps({
+    "type": "service_account",
+    "client_email": "sa@sirim-coc-agent.iam.gserviceaccount.com",
+    "private_key": _private_key.private_bytes(
+        encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode(),
+    "private_key_id": "fake-key-id",
+})
 
 
 class FakeResponse:
@@ -47,23 +58,16 @@ def _b64url(text: str) -> str:
 
 def fake_post(url, data=None, json=None, **kwargs):
     if url == "https://oauth2.googleapis.com/token":
-        if data["grant_type"] == "authorization_code":
-            assert data["code"] == "fake-auth-code"
-            return FakeResponse({"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600})
-        if data["grant_type"] == "refresh_token":
-            assert data["refresh_token"] == "rt-1"
-            return FakeResponse({"access_token": "at-fresh", "expires_in": 3600})
+        return FakeResponse({"access_token": "impersonated-token", "expires_in": 3600})
     if url.endswith("/messages/send"):
         return FakeResponse({"id": "sent-msg-1", "threadId": json.get("threadId", "new-thread-1")})
     raise AssertionError(f"unexpected POST {url} data={data} json={json}")
 
 
 def fake_get(url, headers=None, params=None, **kwargs):
-    if url == "https://www.googleapis.com/oauth2/v3/userinfo":
-        assert headers["Authorization"] == "Bearer at-1"
-        return FakeResponse({"email": "priya@example.com"})
+    assert headers["Authorization"] == "Bearer impersonated-token"
 
-    if url.endswith("/messages") and "q" not in (params or {}) or (params and "maxResults" in params and "q" in params):
+    if url.endswith("/messages") and params and "maxResults" in params:
         return FakeResponse({"messages": [{"id": "msg-abc"}]})
 
     if url.endswith("/messages/msg-abc") and params.get("format") == "metadata":
@@ -102,70 +106,44 @@ def fake_get(url, headers=None, params=None, **kwargs):
 
 
 def main():
+    client = TestClient(app)
+    headers = auth_headers(client, "Priya")
+
+    # --- before any service account is configured, calls fail with a clear error ---
+    unconfigured = client.post("/api/email/send", headers=headers, json={"to": "x@example.com", "subject": "s", "body": "b"})
+    assert unconfigured.status_code == 400 and "service account" in unconfigured.text.lower()
+    print("[ok] a clear error, not a raw failure, when no service account is configured yet")
+
+    client.put("/api/settings", headers=headers, json={"google_service_account_key": SERVICE_ACCOUNT_KEY})
+    print("[ok] admin configured the service account key")
+
     with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get):
-        client = TestClient(app)
-        headers = auth_headers(client, "Priya")
-
-        assert client.get("/api/email/status", headers=headers).json() == {"connected": False}
-        print("[ok] starts disconnected")
-
-        start = client.get("/api/email/auth/start", headers=headers).json()
-        assert "accounts.google.com" in start["authorization_url"]
-        assert "test-client-id" in start["authorization_url"]
-        state = start["authorization_url"].split("state=")[1].split("&")[0]
-        print(f"[ok] auth/start returned a valid Google authorization URL")
-
-        callback = client.get(
-            "/api/email/auth/callback",
-            params={"code": "fake-auth-code", "state": state},
-            follow_redirects=False,
-        )
-        assert callback.status_code in (302, 307), callback.status_code
-        print("[ok] auth/callback exchanged the code and redirected")
-
-        status = client.get("/api/email/status", headers=headers).json()
-        assert status == {"connected": True, "account_email": "priya@example.com",
-                           "connected_at": status["connected_at"]}
-        print(f"[ok] now connected as {status['account_email']}")
-
         sent = client.post(
             "/api/email/send", headers=headers,
-            json={"to": "sam@example.com", "subject": "Hello", "body": "Hi Sam!"},
+            json={"to": "sam@example.com", "subject": "Hello", "body": "Hi Sam!", "impersonate": "priya@cytron.io"},
         ).json()
-        assert sent["id"] == "sent-msg-1"
-        print("[ok] sent a new email")
+    assert sent["id"] == "sent-msg-1"
+    print("[ok] sent a new email, impersonating a Workspace address")
 
-        messages = client.get("/api/email/messages", headers=headers, params={"max_results": 5}).json()
-        assert len(messages) == 1 and messages[0]["subject"] == "Quick question"
-        print(f"[ok] listed {len(messages)} message(s): \"{messages[0]['subject']}\" from {messages[0]['from']}")
+    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get):
+        messages = client.get(
+            "/api/email/messages", headers=headers, params={"max_results": 5, "impersonate": "priya@cytron.io"},
+        ).json()
+    assert len(messages) == 1 and messages[0]["subject"] == "Quick question"
+    print(f"[ok] listed {len(messages)} message(s): \"{messages[0]['subject']}\" from {messages[0]['from']}")
 
-        full = client.get("/api/email/messages/msg-abc", headers=headers).json()
-        assert full["body"] == "Hey, do you have the Q3 numbers ready?"
-        print(f"[ok] read full body via MIME parsing: \"{full['body']}\"")
+    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get):
+        full = client.get("/api/email/messages/msg-abc", headers=headers, params={"impersonate": "priya@cytron.io"}).json()
+    assert full["body"] == "Hey, do you have the Q3 numbers ready?"
+    print(f"[ok] read full body via MIME parsing: \"{full['body']}\"")
 
+    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get):
         reply = client.post(
             "/api/email/messages/msg-abc/reply", headers=headers,
-            json={"body": "Yes! Sending them over now."},
+            json={"body": "Yes! Sending them over now.", "impersonate": "priya@cytron.io"},
         ).json()
-        assert reply["threadId"] == "thread-abc"
-        print("[ok] replied on the same thread")
-
-        client.delete("/api/email/auth", headers=headers)
-        assert client.get("/api/email/status", headers=headers).json() == {"connected": False}
-        print("[ok] disconnect works")
-
-        # --- error paths that used to be an unhandled 500 or a bare 422 ---
-        denied = client.get("/api/email/auth/callback", params={"error": "access_denied", "state": "irrelevant"})
-        assert denied.status_code == 400 and "test user" in denied.text
-        print("[ok] Google 'access_denied' redirect shows a helpful page, not a 500")
-
-        no_code = client.get("/api/email/auth/callback", params={"state": "irrelevant"})
-        assert no_code.status_code == 400 and "authorization code" in no_code.text
-        print("[ok] a callback with no code shows a helpful page, not a raw 422")
-
-        bad_state = client.get("/api/email/auth/callback", params={"code": "x", "state": "not-a-real-state"})
-        assert bad_state.status_code == 400 and "expired" in bad_state.text
-        print("[ok] an unknown/expired state shows a helpful page")
+    assert reply["threadId"] == "thread-abc"
+    print("[ok] replied on the same thread")
 
     print("\nAll Gmail smoke tests passed.")
 

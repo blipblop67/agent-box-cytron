@@ -1,10 +1,18 @@
-import time
-import urllib.parse
+"""
+Hub-wide settings, admin-configurable from the Settings page: the LLM
+provider, a Google service account key (the only way this hub talks to
+Google - see service_account_auth.py), a web search key, a YouTube key,
+and outgoing SMTP settings.
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+There's no OAuth client ID/secret or redirect URI concept here anymore -
+removing per-user OAuth for Google entirely also removed the whole class
+of problem that came with it (Google's redirect URI rejecting `.local`
+names and raw IPs, needing a real domain, DuckDNS, Tailscale, etc.) since
+a service account never involves a browser redirect at all.
+"""
+from fastapi import APIRouter, Depends, HTTPException
 
-from . import db, gmail_routes, drive_routes, calendar_routes, sheets_routes, dynamic_dns, email_sender, \
-    google_oauth, hub_settings, service_account_auth
+from . import email_sender, hub_settings, service_account_auth
 from .auth import get_current_user
 from .models import SettingsOut, SettingsUpdate, TestEmailRequest, TestImpersonationRequest
 
@@ -16,40 +24,20 @@ IMPERSONATION_TEST_SCOPES = {
 }
 
 
-def _settings_out(request: Request) -> dict:
-    settings = hub_settings.get_settings()
-    settings["google_email_redirect_uri"] = google_oauth.redirect_uri_for(request, gmail_routes.CALLBACK_PATH)
-    settings["google_drive_redirect_uri"] = google_oauth.redirect_uri_for(request, drive_routes.CALLBACK_PATH)
-    settings["google_calendar_redirect_uri"] = google_oauth.redirect_uri_for(request, calendar_routes.CALLBACK_PATH)
-    settings["google_sheets_redirect_uri"] = google_oauth.redirect_uri_for(request, sheets_routes.CALLBACK_PATH)
-    # all four share the same host, so one check covers all of them
-    warning = google_oauth.google_oauth_warning_for(settings["google_email_redirect_uri"])
-    if warning and settings["duckdns_configured"]:
-        # already have a real fix in hand - say so directly instead of the generic "get a domain" advice
-        port = urllib.parse.urlparse(settings["google_email_redirect_uri"]).port
-        suggested = f"http://{settings['duckdns_subdomain']}.duckdns.org" + (f":{port}" if port else "")
-        warning = (
-            f"You're reachable at {suggested} now (DuckDNS is already configured below) - use that "
-            f"address instead of this one for Google sign-in, and Google will accept it."
-        )
-    settings["google_oauth_redirect_warning"] = warning
-    return settings
-
-
 @router.get("", response_model=SettingsOut)
-def get_settings(request: Request, user: dict = Depends(get_current_user)):
-    return _settings_out(request)
+def get_settings(user: dict = Depends(get_current_user)):
+    return hub_settings.get_settings()
 
 
 @router.put("", response_model=SettingsOut)
-def update_settings(request: Request, body: SettingsUpdate, user: dict = Depends(get_current_user)):
+def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(403, "Only a hub admin can change hub settings")
     try:
         hub_settings.update_settings(**body.model_dump())
     except service_account_auth.ServiceAccountError as exc:
         raise HTTPException(400, str(exc))
-    return _settings_out(request)
+    return hub_settings.get_settings()
 
 
 @router.post("/test-email")
@@ -69,12 +57,13 @@ def test_email(body: TestEmailRequest, user: dict = Depends(get_current_user)):
 
 @router.post("/test-impersonation")
 def test_impersonation(body: TestImpersonationRequest, user: dict = Depends(get_current_user)):
-    """Mints a real token acting as body.impersonate and confirms Google
-    actually honors it - the concrete way to find out whether domain-wide
-    delegation was set up correctly in the Workspace Admin Console, rather
-    than discovering it's broken the first time a real flow runs."""
+    """Mints a real token acting as body.impersonate (or as the service
+    account itself, if left blank) and confirms Google actually honors
+    it - the concrete way to find out whether domain-wide delegation was
+    set up correctly in the Workspace Admin Console, rather than
+    discovering it's broken the first time a real flow runs."""
     if user["role"] != "admin":
-        raise HTTPException(403, "Only a hub admin can test service account impersonation")
+        raise HTTPException(403, "Only a hub admin can test service account access")
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
         raise HTTPException(400, "No Google service account key is configured yet")
@@ -82,29 +71,7 @@ def test_impersonation(body: TestImpersonationRequest, user: dict = Depends(get_
     if scopes is None:
         raise HTTPException(400, f"Unknown scope '{body.scope}' - expected one of: {', '.join(IMPERSONATION_TEST_SCOPES)}")
     try:
-        service_account_auth.get_access_token_for(key_info, body.impersonate, scopes)
+        service_account_auth.get_access_token(key_info, scopes, body.impersonate or None)
     except service_account_auth.ServiceAccountError as exc:
         raise HTTPException(400, str(exc))
     return {"ok": True, "impersonated": body.impersonate, "scope": body.scope}
-
-
-@router.post("/duckdns/update-now")
-def duckdns_update_now(user: dict = Depends(get_current_user)):
-    """Triggers an immediate update rather than waiting for the next
-    background refresh (scheduler.py, every 5 minutes) - lets someone
-    confirm it actually works right after saving credentials, instead of
-    wondering whether it's configured correctly for the next few minutes."""
-    if user["role"] != "admin":
-        raise HTTPException(403, "Only a hub admin can update DuckDNS")
-    creds = hub_settings.get_duckdns_credentials()
-    if creds is None:
-        raise HTTPException(400, "DuckDNS isn't configured yet - add a subdomain and token first")
-    subdomain, token = creds
-    try:
-        result = dynamic_dns.update(subdomain, token)
-    except dynamic_dns.DuckDnsError as exc:
-        raise HTTPException(400, str(exc))
-    db.set_setting("duckdns_last_updated_ip", result["ip"])
-    db.set_setting("duckdns_last_updated_at", str(time.time()))
-    db.set_setting("duckdns_last_error", "")
-    return result

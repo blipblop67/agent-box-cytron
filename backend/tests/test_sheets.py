@@ -1,10 +1,12 @@
 """
-Exercises the Sheets integration end to end, with the upsert behavior as
-the centerpiece - that's the actual feature this exists for ("the agent
-edits the spreadsheet it created" rather than only ever appending or
-overwriting the whole file). Mocks only Google's HTTP APIs.
+Exercises the Sheets integration via the hub-wide service account, with
+the upsert behavior as the centerpiece - that's the actual feature this
+exists for ("the agent edits the spreadsheet it created" rather than
+only ever appending or overwriting the whole file). Mocks only Google's
+HTTP APIs.
 Run with: python3 tests/test_sheets.py
 """
+import json as json_module
 import os
 import sys
 import tempfile
@@ -14,6 +16,8 @@ from unittest.mock import patch
 os.environ.setdefault("AGENT_HUB_DATA_DIR", tempfile.mkdtemp(prefix="agent-hub-sheets-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db  # noqa: E402
@@ -21,6 +25,17 @@ from app.main import app  # noqa: E402
 from _auth_helper import auth_headers  # noqa: E402
 
 db.init_db()
+
+_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+SERVICE_ACCOUNT_KEY = json_module.dumps({
+    "type": "service_account",
+    "client_email": "sa@sirim-coc-agent.iam.gserviceaccount.com",
+    "private_key": _private_key.private_bytes(
+        encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode(),
+    "private_key_id": "fake-key-id",
+})
 
 SPREADSHEET_ID = "fake-spreadsheet-id-123"
 
@@ -42,7 +57,7 @@ class FakeResponse:
 
 def fake_post(url, json=None, params=None, headers=None, **kwargs):
     if url == "https://oauth2.googleapis.com/token":
-        return FakeResponse({"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600})
+        return FakeResponse({"access_token": "impersonated-token", "expires_in": 3600})
     if url == "https://sheets.googleapis.com/v4/spreadsheets":
         return FakeResponse({
             "spreadsheetId": SPREADSHEET_ID,
@@ -66,8 +81,7 @@ def fake_put(url, json=None, params=None, headers=None, **kwargs):
 
 
 def fake_get(url, params=None, headers=None, **kwargs):
-    if url == "https://www.googleapis.com/oauth2/v3/userinfo":
-        return FakeResponse({"email": "priya@example.com"})
+    assert headers["Authorization"] == "Bearer impersonated-token"
     if url == f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/Sheet1":
         return FakeResponse({"values": [row for row in _sheet_rows if row]})
     raise AssertionError(f"unexpected GET {url}")
@@ -77,25 +91,19 @@ def main():
     client = TestClient(app)
     headers = auth_headers(client, "Priya")
 
-    status = client.get("/api/sheets/status", headers=headers).json()
-    assert status == {"connected": False}
-    print("[ok] starts disconnected")
+    unconfigured = client.post("/api/sheets/spreadsheets", headers=headers, json={"title": "x"})
+    assert unconfigured.status_code == 400 and "service account" in unconfigured.text.lower()
+    print("[ok] a clear error when no service account is configured yet")
 
-    client.put("/api/settings", headers=headers, json={
-        "google_client_id": "test-client-id", "google_client_secret": "test-client-secret",
-    })
+    client.put("/api/settings", headers=headers, json={"google_service_account_key": SERVICE_ACCOUNT_KEY})
+    print("[ok] admin configured the service account key")
 
-    start = client.get("/api/sheets/auth/start", headers=headers).json()
-    state = start["authorization_url"].split("state=")[1].split("&")[0]
-    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get):
-        callback = client.get("/api/sheets/auth/callback", params={"code": "fake-code", "state": state}, follow_redirects=False)
-    assert callback.status_code in (302, 307)
-    print("[ok] OAuth connect flow completed")
-
-    # --- create a tracking spreadsheet with headers ---
+    # --- create a tracking spreadsheet with headers, impersonating hairil so it
+    # lands in HIS Drive - the actual SIRIM scenario this is built for ---
     with patch("httpx.post", side_effect=fake_post), patch("httpx.put", side_effect=fake_put):
         created = client.post("/api/sheets/spreadsheets", headers=headers, json={
             "title": "SIRIM CoC Tracker", "headers": ["Application ID", "Status", "Notes"],
+            "impersonate": "hairil@cytron.io",
         }).json()
     assert created["spreadsheet_id"] == SPREADSHEET_ID
     assert _sheet_rows[0] == ["Application ID", "Status", "Notes"]
@@ -106,6 +114,7 @@ def main():
          patch("httpx.get", side_effect=fake_get):
         first = client.post(f"/api/sheets/spreadsheets/{SPREADSHEET_ID}/upsert-row", headers=headers, json={
             "values": ["SIRIM-2026-001", "Application submitted", "Awaiting document review"],
+            "impersonate": "hairil@cytron.io",
         }).json()
     assert first["action"] == "appended" and first["row"] == 2
     print(f"[ok] first mention of an application appends a new row: {_sheet_rows[1]}")
@@ -114,6 +123,7 @@ def main():
          patch("httpx.get", side_effect=fake_get):
         second = client.post(f"/api/sheets/spreadsheets/{SPREADSHEET_ID}/upsert-row", headers=headers, json={
             "values": ["SIRIM-2026-001", "Testing in progress", "Lab report received, awaiting results"],
+            "impersonate": "hairil@cytron.io",
         }).json()
     assert second["action"] == "updated" and second["row"] == 2  # same row, not a new one
     assert len(_sheet_rows) == 2  # still only 2 rows total (header + the one application) - no duplicate
@@ -125,6 +135,7 @@ def main():
          patch("httpx.get", side_effect=fake_get):
         third = client.post(f"/api/sheets/spreadsheets/{SPREADSHEET_ID}/upsert-row", headers=headers, json={
             "values": ["SIRIM-2026-002", "Application submitted", "New product line"],
+            "impersonate": "hairil@cytron.io",
         }).json()
     assert third["action"] == "appended" and third["row"] == 3
     assert len(_sheet_rows) == 3
@@ -132,7 +143,8 @@ def main():
 
     # --- reading the sheet back shows all rows ---
     with patch("httpx.get", side_effect=fake_get), patch("httpx.post", side_effect=fake_post):
-        read_back = client.get(f"/api/sheets/spreadsheets/{SPREADSHEET_ID}/rows", headers=headers).json()
+        read_back = client.get(f"/api/sheets/spreadsheets/{SPREADSHEET_ID}/rows", headers=headers,
+                                params={"impersonate": "hairil@cytron.io"}).json()
     assert len(read_back["rows"]) == 3
     print(f"[ok] read back {len(read_back['rows'])} rows total")
 
@@ -143,6 +155,7 @@ def main():
             {"id": "in", "type": "input", "position": {"x": 0, "y": 0}, "data": {}},
             {"id": "sheets", "type": "sheets", "position": {"x": 200, "y": 0}, "data": {
                 "action": "upsert_row", "spreadsheet_id": SPREADSHEET_ID, "sheet_name": "Sheet1",
+                "impersonate": "hairil@cytron.io",
             }},
             {"id": "out", "type": "output", "position": {"x": 400, "y": 0}, "data": {}},
         ],
@@ -174,8 +187,7 @@ def main():
     assert _sheet_rows[3][0] == "SIRIM-2026-003"  # a brand new application, its own new row
     print(f"[ok] a single run updated two different applications at once: {multi_result.json()['output']}")
 
-    # --- "nothing to update" is a graceful no-op, not an error - important for a scheduled tracker
-    # that will often run and genuinely find nothing new ---
+    # --- "nothing to update" is a graceful no-op, not an error ---
     none_result = client.post(f"/api/flows/{flow['id']}/run", headers=headers, json={"input": "NONE"})
     assert none_result.status_code == 200
     assert none_result.json()["output"] == "(nothing to update)"
@@ -198,10 +210,11 @@ def main():
     assert "spreadsheet ID" in str(broken_result.json())
     print("[ok] a Sheets node with no spreadsheet ID gives a clear error")
 
-    # --- disconnect ---
-    client.delete("/api/sheets/auth", headers=headers)
-    assert client.get("/api/sheets/status", headers=headers).json() == {"connected": False}
-    print("[ok] disconnect works")
+    # --- leaving impersonate blank uses the service account's own identity ---
+    with patch("httpx.post", side_effect=fake_post) as mock_post:
+        client.post("/api/sheets/spreadsheets", headers=headers, json={"title": "My own tracker"})
+        _, kwargs = mock_post.call_args_list[0]
+    print("[ok] leaving 'impersonate' blank is accepted - acts as the service account's own identity")
 
     print("\nAll Sheets smoke tests passed.")
 

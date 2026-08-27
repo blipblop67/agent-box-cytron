@@ -1,13 +1,16 @@
 """
 Thin wrapper around the Gmail REST API v1 - send, list, read, and reply.
-Raw REST + stdlib `email.mime` rather than the official Google client library,
-for the same "keep it small and readable" reason as gmail_oauth.py.
+Raw REST + stdlib `email.mime` rather than the official Google client
+library, for the same "keep it small and readable" reason as
+service_account_auth.py.
 
-Every function takes an optional `impersonate` email: when set (and a
-Workspace service account is configured hub-wide), the call acts as that
-Workspace user via domain-wide delegation instead of the calling user_id's
-personal OAuth connection - see service_account_auth.py for why these are
-two genuinely different auth models, not two flags on the same one.
+Authenticates entirely through the hub-wide Google service account (see
+service_account_auth.py) - there's no per-user OAuth connection anymore.
+`impersonate` (a Workspace email) is required in practice for Gmail
+specifically: a plain service account has no inbox of its own, so
+leaving it blank will fail with a clear Google error unless a Workspace
+admin has specifically provisioned a mailbox for the service account
+itself, which is unusual.
 """
 import base64
 from email.mime.text import MIMEText
@@ -15,30 +18,23 @@ from email.utils import parseaddr
 
 import httpx
 
-from . import gmail_tokens, hub_settings, service_account_auth
+from . import hub_settings, service_account_auth
 
 API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
-# Same functional scopes as the per-user OAuth flow (gmail_oauth.py) minus
-# the identity-only ones (userinfo.email, openid) - domain-wide delegation
-# already knows exactly who it's acting as, nothing to discover.
-IMPERSONATION_SCOPES = [
+SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.modify",  # read + reply + basic label management
 ]
 
 
-def _headers(user_id: str, impersonate: str | None = None) -> dict:
-    if impersonate:
-        key_info = hub_settings.get_service_account_key()
-        if key_info is None:
-            raise service_account_auth.ServiceAccountError(
-                "This node is set to act as a specific person, but no Google service account is "
-                "configured on the Settings page yet."
-            )
-        token = service_account_auth.get_access_token_for(key_info, impersonate, IMPERSONATION_SCOPES)
-    else:
-        token = gmail_tokens.get_valid_access_token(user_id)
+def _headers(impersonate: str | None = None) -> dict:
+    key_info = hub_settings.get_service_account_key()
+    if key_info is None:
+        raise service_account_auth.ServiceAccountError(
+            "Gmail isn't configured yet - add a Google service account key on the Settings page"
+        )
+    token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -51,7 +47,7 @@ def _b64url_decode(data: str) -> str:
     return base64.urlsafe_b64decode(padded).decode(errors="ignore")
 
 
-def send_email(user_id: str, to: str, subject: str, body: str, *,
+def send_email(to: str, subject: str, body: str, *,
                 thread_id: str | None = None, in_reply_to: str | None = None,
                 references: str | None = None, impersonate: str | None = None) -> dict:
     msg = MIMEText(body)
@@ -66,27 +62,27 @@ def send_email(user_id: str, to: str, subject: str, body: str, *,
     if thread_id:
         payload["threadId"] = thread_id
 
-    resp = httpx.post(f"{API_BASE}/messages/send", headers=_headers(user_id, impersonate), json=payload, timeout=30)
+    resp = httpx.post(f"{API_BASE}/messages/send", headers=_headers(impersonate), json=payload, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
 
-def list_messages(user_id: str, query: str = "", max_results: int = 10, *, impersonate: str | None = None) -> list[dict]:
+def list_messages(query: str = "", max_results: int = 10, *, impersonate: str | None = None) -> list[dict]:
     """Cheap listing: headers + snippet only (format=metadata), not the full body -
     good for scanning an inbox without pulling every message's full content."""
     params = {"maxResults": max_results}
     if query:
         params["q"] = query
-    resp = httpx.get(f"{API_BASE}/messages", headers=_headers(user_id, impersonate), params=params, timeout=30)
+    resp = httpx.get(f"{API_BASE}/messages", headers=_headers(impersonate), params=params, timeout=30)
     resp.raise_for_status()
     ids = [m["id"] for m in resp.json().get("messages", [])]
-    return [_get_message_metadata(user_id, mid, impersonate) for mid in ids]
+    return [_get_message_metadata(mid, impersonate) for mid in ids]
 
 
-def _get_message_metadata(user_id: str, message_id: str, impersonate: str | None = None) -> dict:
+def _get_message_metadata(message_id: str, impersonate: str | None = None) -> dict:
     resp = httpx.get(
         f"{API_BASE}/messages/{message_id}",
-        headers=_headers(user_id, impersonate),
+        headers=_headers(impersonate),
         params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"]},
         timeout=30,
     )
@@ -94,12 +90,12 @@ def _get_message_metadata(user_id: str, message_id: str, impersonate: str | None
     return _parse_message(resp.json(), include_body=False)
 
 
-def get_message(user_id: str, message_id: str, *, impersonate: str | None = None) -> dict:
+def get_message(message_id: str, *, impersonate: str | None = None) -> dict:
     """Full read: headers plus the plain-text body, for when an agent actually
     needs to read what an email says, not just its subject line."""
     resp = httpx.get(
         f"{API_BASE}/messages/{message_id}",
-        headers=_headers(user_id, impersonate),
+        headers=_headers(impersonate),
         params={"format": "full"},
         timeout=30,
     )
@@ -107,14 +103,14 @@ def get_message(user_id: str, message_id: str, *, impersonate: str | None = None
     return _parse_message(resp.json(), include_body=True)
 
 
-def reply_to_message(user_id: str, message_id: str, body: str, *, impersonate: str | None = None) -> dict:
-    original = get_message(user_id, message_id, impersonate=impersonate)
+def reply_to_message(message_id: str, body: str, *, impersonate: str | None = None) -> dict:
+    original = get_message(message_id, impersonate=impersonate)
     to_address = parseaddr(original["from"])[1]
     subject = original["subject"] or ""
     if not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
     return send_email(
-        user_id, to=to_address, subject=subject, body=body,
+        to=to_address, subject=subject, body=body,
         thread_id=original["thread_id"],
         in_reply_to=original["message_id_header"],
         references=original["message_id_header"],

@@ -69,11 +69,13 @@ class DriveFileCreate(BaseModel):
     content: str
     mime_type: str = "text/plain"
     folder_id: str | None = None
+    impersonate: str | None = None
 
 
 class DriveFileUpdate(BaseModel):
     content: str
     mime_type: str = "text/plain"
+    impersonate: str | None = None
 
 
 class FlowNode(BaseModel):
@@ -158,13 +160,6 @@ class SettingsOut(BaseModel):
     openrouter_key_configured: bool
     ollama_base_url: str
     ollama_model: str
-    google_client_id: str
-    google_client_secret_configured: bool
-    google_email_redirect_uri: str
-    google_drive_redirect_uri: str
-    google_calendar_redirect_uri: str
-    google_sheets_redirect_uri: str
-    google_oauth_redirect_warning: str | None
     google_service_account_configured: bool
     google_service_account_email: str
     web_search_key_configured: bool
@@ -175,12 +170,6 @@ class SettingsOut(BaseModel):
     smtp_from_address: str
     smtp_use_tls: bool
     smtp_password_configured: bool
-    duckdns_subdomain: str
-    duckdns_token_configured: bool
-    duckdns_configured: bool
-    duckdns_last_updated_ip: str
-    duckdns_last_updated_at: float | None
-    duckdns_last_error: str
     smtp_configured: bool
 
 
@@ -190,8 +179,6 @@ class SettingsUpdate(BaseModel):
     openrouter_model: str | None = None
     ollama_base_url: str | None = None
     ollama_model: str | None = None
-    google_client_id: str | None = None
-    google_client_secret: str | None = None
     web_search_api_key: str | None = None
     youtube_api_key: str | None = None
     smtp_host: str | None = None
@@ -201,12 +188,10 @@ class SettingsUpdate(BaseModel):
     smtp_from_address: str | None = None
     smtp_use_tls: bool | None = None
     google_service_account_key: str | None = None
-    duckdns_subdomain: str | None = None
-    duckdns_token: str | None = None
 
 
 class TestImpersonationRequest(BaseModel):
-    impersonate: str
+    impersonate: str | None = None
     scope: str = "gmail"  # "gmail" | "sheets" | "drive" | "calendar"
 
 
@@ -378,13 +363,6 @@ class AdminPasswordResetRequest(BaseModel):
 
 
 class PersonalSettingsOut(BaseModel):
-    google_client_id: str
-    google_client_secret_configured: bool
-    google_email_redirect_uri: str
-    google_drive_redirect_uri: str
-    google_calendar_redirect_uri: str
-    google_sheets_redirect_uri: str
-    google_oauth_redirect_warning: str | None
     openrouter_model: str
     openrouter_key_configured: bool
     web_search_key_configured: bool
@@ -392,8 +370,6 @@ class PersonalSettingsOut(BaseModel):
 
 
 class PersonalSettingsUpdate(BaseModel):
-    google_client_id: str | None = None
-    google_client_secret: str | None = None
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
     web_search_api_key: str | None = None

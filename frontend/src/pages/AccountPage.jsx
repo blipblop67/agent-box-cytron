@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CircleCheck, ExternalLink, Copy, Check, KeyRound, Mail, ShieldAlert } from 'lucide-react'
+import { CircleCheck, KeyRound, Mail } from 'lucide-react'
 import { api, clearStoredToken } from '../lib/api'
 import { Field, TextInput } from '../components/common/FormField'
 import Button from '../components/common/Button'
@@ -18,7 +18,6 @@ export default function AccountPage() {
 
       <EmailCard />
       <PasswordCard />
-      <PersonalGoogleCard />
       <PersonalLlmCard />
       <PersonalWebSearchCard />
       <PersonalYouTubeCard />
@@ -134,109 +133,6 @@ function PasswordCard() {
     </form>
   )
 }
-
-function PersonalGoogleCard() {
-  const [settings, setSettings] = useState(null)
-  const [hubConfigured, setHubConfigured] = useState(false)
-  const [clientId, setClientId] = useState('')
-  const [clientSecret, setClientSecret] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  async function refresh() {
-    const [s, hub] = await Promise.all([api.get('/account/settings'), api.get('/settings')])
-    setSettings(s)
-    setClientId(s.google_client_id)
-    setHubConfigured(hub.google_client_secret_configured)
-  }
-
-  useEffect(() => {
-    refresh()
-  }, [])
-
-  async function handleSave(e) {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const body = { google_client_id: clientId }
-      if (clientSecret) body.google_client_secret = clientSecret
-      setSettings(await api.put('/account/settings', body))
-      setClientSecret('')
-      setSaved(true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!settings) return null
-
-  const usingPersonal = settings.google_client_secret_configured
-  const activeLabel = usingPersonal
-    ? 'Active: your personal Google app'
-    : hubConfigured
-      ? "Active: the hub's shared Google app"
-      : 'Nothing configured yet - Gmail/Drive/Calendar/Sheets connections will fail'
-
-  return (
-    <form onSubmit={handleSave} className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink">Your own Google app</h2>
-          <Badge variant={usingPersonal ? 'signal' : hubConfigured ? 'neutral' : 'danger'}>{activeLabel}</Badge>
-        </div>
-        <p className="mt-1.5 text-xs text-ink-muted">
-          Optional. Leave blank and you'll keep using the hub-wide default above. Fill this in only
-          if you'd rather not trust the hub admin's OAuth app with your Google account - your own
-          app here takes over for you specifically, nobody else. Create one at{' '}
-          <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
-            console.cloud.google.com <ExternalLink size={10} className="inline" />
-          </a>.
-        </p>
-      </div>
-
-      <Field label="Client ID">
-        <TextInput value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="123456-abc.apps.googleusercontent.com" />
-      </Field>
-
-      <Field label="Client secret" hint={settings.google_client_secret_configured ? undefined : 'No secret configured yet'}>
-        <div className="flex items-center gap-2">
-          <TextInput
-            type="password"
-            value={clientSecret}
-            onChange={(e) => setClientSecret(e.target.value)}
-            placeholder={settings.google_client_secret_configured ? '••••••••••••  (leave blank to keep current secret)' : 'GOCSPX-...'}
-          />
-          {settings.google_client_secret_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
-        </div>
-      </Field>
-
-      {clientId && (
-        <div className="space-y-2 rounded-md border border-line-strong bg-surface-raised p-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-            Redirect URIs - add all four to your OAuth client
-          </p>
-          <RedirectUriRow label="Gmail" value={settings.google_email_redirect_uri} />
-          <RedirectUriRow label="Drive" value={settings.google_drive_redirect_uri} />
-          <RedirectUriRow label="Calendar" value={settings.google_calendar_redirect_uri} />
-          <RedirectUriRow label="Sheets" value={settings.google_sheets_redirect_uri} />
-        </div>
-      )}
-
-      {clientId && settings.google_oauth_redirect_warning && (
-        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-dim px-3 py-2.5 text-xs text-danger">
-          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
-          <span>{settings.google_oauth_redirect_warning}</span>
-        </div>
-      )}
-
-      <div className="flex items-center gap-3">
-        <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-        {saved && <span className="text-xs text-signal">Saved</span>}
-      </div>
-    </form>
-  )
-}
-
 function PersonalLlmCard() {
   const [settings, setSettings] = useState(null)
   const [hub, setHub] = useState(null)
@@ -474,25 +370,5 @@ function PersonalYouTubeCard() {
         {saved && <span className="text-xs text-signal">Saved</span>}
       </div>
     </form>
-  )
-}
-
-function RedirectUriRow({ label, value }) {
-  const [copied, setCopied] = useState(false)
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-10 shrink-0 text-[11px] text-ink-faint">{label}</span>
-      <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px] text-ink-muted">{value}</code>
-      <button type="button" onClick={handleCopy} className="shrink-0 rounded p-1 text-ink-faint hover:bg-surface hover:text-copper" title="Copy">
-        {copied ? <Check size={13} className="text-signal" /> : <Copy size={13} />}
-      </button>
-    </div>
   )
 }

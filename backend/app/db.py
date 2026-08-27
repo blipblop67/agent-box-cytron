@@ -458,37 +458,6 @@ def delete_document(doc_id: str) -> None:
         conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
 
 
-# ---- oauth credentials (gmail, drive, ...) ------------------------------------
-
-def upsert_oauth_credential(user_id: str, provider: str, encrypted_token: bytes, account_email: str) -> None:
-    with get_conn() as conn:
-        now = time.time()
-        conn.execute(
-            "INSERT INTO oauth_credentials (user_id, provider, encrypted_token, account_email, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(user_id, provider) DO UPDATE SET "
-            "encrypted_token = excluded.encrypted_token, account_email = excluded.account_email, "
-            "updated_at = excluded.updated_at",
-            (user_id, provider, encrypted_token, account_email, now, now),
-        )
-
-
-def get_oauth_credential(user_id: str, provider: str) -> sqlite3.Row | None:
-    with get_conn() as conn:
-        return conn.execute(
-            "SELECT * FROM oauth_credentials WHERE user_id = ? AND provider = ?",
-            (user_id, provider),
-        ).fetchone()
-
-
-def delete_oauth_credential(user_id: str, provider: str) -> None:
-    with get_conn() as conn:
-        conn.execute(
-            "DELETE FROM oauth_credentials WHERE user_id = ? AND provider = ?",
-            (user_id, provider),
-        )
-
-
 # ---- flows ---------------------------------------------------------------------
 
 def create_flow(name: str, description: str, owner_id: str, visibility: str) -> str:

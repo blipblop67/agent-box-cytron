@@ -1,106 +1,57 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Mail, HardDrive, CalendarDays, Table, Send, CircleCheck, Unplug, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
+import { Table, Send, CircleCheck, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
 import { api } from '../lib/api'
-import { relativeTime } from '../lib/format'
 import Button from '../components/common/Button'
 import Badge from '../components/common/Badge'
 import { Field, TextInput, Select } from '../components/common/FormField'
 import { useUserStore } from '../state/userStore'
 
-const GOOGLE_SERVICES = [
-  { key: 'email', label: 'Gmail', icon: Mail, description: 'Send, search, and reply to email through your own Gmail account.' },
-  { key: 'drive', label: 'Google Drive', icon: HardDrive, description: 'List, read, and create files in your own Drive.' },
-  { key: 'calendar', label: 'Google Calendar', icon: CalendarDays, description: 'List upcoming events and create new ones on your own calendar.' },
-  { key: 'sheets', label: 'Google Sheets', icon: Table, description: 'Create spreadsheets, and read or update rows in them.' },
-]
-
 export default function ConnectionsPage() {
-  const [status, setStatus] = useState({})
-  const [error, setError] = useState(null)
-
-  async function refresh() {
-    const [email, drive, calendar, sheets] = await Promise.all([
-      api.get('/email/status'), api.get('/drive/status'), api.get('/calendar/status'), api.get('/sheets/status'),
-    ])
-    setStatus({ email, drive, calendar, sheets })
-  }
+  const [settings, setSettings] = useState(null)
 
   useEffect(() => {
-    refresh()
+    api.get('/settings').then(setSettings)
   }, [])
 
-  async function handleConnect(key) {
-    setError(null)
-    try {
-      const { authorization_url } = await api.get(`/${key}/auth/start`)
-      window.location.href = authorization_url
-    } catch (err) {
-      setError(err.message)
-    }
-  }
-
-  async function handleDisconnect(key) {
-    await api.delete(`/${key}/auth`)
-    refresh()
-  }
+  const serviceAccountConfigured = settings?.google_service_account_configured || false
+  const serviceAccountEmail = settings?.google_service_account_email || ''
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-lg font-semibold text-ink">Connections</h1>
       <p className="mt-1 text-sm text-ink-muted">
-        Gmail, Drive, Calendar, and Sheets connect to your own account - a tool node acts as whoever runs
-        the flow. Telegram bots below work differently: each one belongs to whichever flows you
-        wire it into, regardless of who runs them - so different agents can message through
-        different bots.
+        Telegram bots are a shared resource, not a personal connection - each one belongs to
+        whichever flows you wire it into, regardless of who runs them, so different agents can
+        message through different bots.
       </p>
 
-      {error && (
-        <div className="mt-4 rounded-md border border-danger/30 bg-danger-dim px-3 py-2 text-xs text-danger">
-          {error}
-          {error.includes('Settings') && (
-            <>
-              {' '}
-              <Link to="/account" className="underline hover:text-ink">Set up your own on the Account page →</Link>
-            </>
-          )}
-        </div>
-      )}
-
       <div className="mt-6 space-y-3">
-        {GOOGLE_SERVICES.map(({ key, label, icon: Icon, description }) => {
-          const s = status[key]
-          const connected = s?.connected
-          return (
-            <div key={key} className="flex items-center gap-4 rounded-xl border border-line bg-surface p-4">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${connected ? 'bg-signal-dim text-signal' : 'bg-surface-raised text-ink-muted'}`}>
-                <Icon size={18} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-ink">{label}</span>
-                  {connected ? (
-                    <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Connected</Badge>
-                  ) : (
-                    <Badge variant="neutral">Not connected</Badge>
-                  )}
-                </div>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {connected ? `${s.account_email} · connected ${relativeTime(s.connected_at)}` : description}
-                </p>
-              </div>
-              {connected ? (
-                <Button variant="ghost" size="sm" onClick={() => handleDisconnect(key)}>
-                  <Unplug size={13} /> Disconnect
-                </Button>
+        <div className="flex items-center gap-4 rounded-xl border border-line bg-surface p-4">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${serviceAccountConfigured ? 'bg-signal-dim text-signal' : 'bg-surface-raised text-ink-muted'}`}>
+            <Table size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-ink">Google (Gmail / Drive / Calendar / Sheets)</span>
+              {serviceAccountConfigured ? (
+                <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Configured</Badge>
               ) : (
-                <Button variant="primary" size="sm" onClick={() => handleConnect(key)}>
-                  Connect
-                </Button>
+                <Badge variant="neutral">Not configured</Badge>
               )}
             </div>
-          )
-        })}
+            <p className="mt-0.5 text-xs text-ink-muted">
+              {serviceAccountConfigured
+                ? `Hub-wide service account: ${serviceAccountEmail}. Set "Impersonate" on a node to act as a specific Workspace person.`
+                : 'One hub-wide service account covers every Google node - no per-person connecting needed.'}
+            </p>
+          </div>
+          <Link to="/settings">
+            <Button variant={serviceAccountConfigured ? 'ghost' : 'primary'} size="sm">
+              {serviceAccountConfigured ? 'Manage in Settings' : 'Set up in Settings'}
+            </Button>
+          </Link>
+        </div>
 
         <TelegramBotsSection />
       </div>

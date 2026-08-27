@@ -35,13 +35,5 @@ DEFAULT_TOP_K = int(os.getenv("RAG_DEFAULT_TOP_K", "5"))
 MAX_UPLOAD_MB = int(os.getenv("RAG_MAX_UPLOAD_MB", "50"))
 ALLOWED_EXTENSIONS = {".pdf", ".csv", ".docx", ".txt", ".md"}
 
-# Gmail / Drive OAuth app credentials - normally set from the Settings page
-# instead (app/hub_settings.py), which takes priority over these. Kept here
-# only as a fallback for people who'd rather configure via .env/systemd.
-# Redirect URIs aren't configured anywhere - they're derived from whatever
-# request hits /auth/start, see gmail_routes.py / drive_routes.py.
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-
 for _d in (UPLOAD_DIR, CHROMA_DIR):
     _d.mkdir(parents=True, exist_ok=True)

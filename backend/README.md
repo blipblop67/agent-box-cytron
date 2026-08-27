@@ -65,16 +65,24 @@ Drive tool integrations. Pairs with the React frontend in
 - **Knowledge bases** — upload PDF / DOCX / CSV / TXT / MD files, they get
   chunked, embedded, and stored locally (Chroma); a Knowledge base node
   searches them at run time
-- **Gmail** — each team member connects their own account, through either
-  the hub's shared Google app (Settings) or their **own** Google app
-  (Account page) if they'd rather not trust the admin's OAuth client; send,
-  search, and reply from an Email node
-- **Drive** — same per-person connection, same personal-app option; list,
-  read (including native Docs/Sheets/Slides), and create files from a Drive node
-- **Calendar** — same per-person connection again (Google Calendar
-  specifically); list upcoming events or create new ones from a Calendar
-  node. The Personal Productivity Coach template uses this to pull your
-  next few events as context for every check-in
+- **Gmail** — send, search, and reply from an Email node, authenticated
+  through the hub's one Google service account (Settings) rather than a
+  personal login - no browser consent screen, no per-person "Connect"
+  step. Leave a node's **Impersonate** field blank and it acts as the
+  service account itself (no real inbox by default - a Workspace admin
+  would need to have provisioned one); set it to a real address in your
+  Google Workspace to act as that specific person's Gmail instead, which
+  needs a Workspace super admin to authorize this service account for
+  domain-wide delegation once
+- **Drive** — same service account, same **Impersonate** field; list,
+  read (including native Docs/Sheets/Slides), and create files from a
+  Drive node. Left unimpersonated, files land in the service account's
+  own Drive space, or wherever's been explicitly shared with its email
+  address - a completely normal way to give an agent its own dedicated
+  storage without tying it to any one person's account
+- **Calendar** — list upcoming events or create new ones from a Calendar
+  node, same auth model. The Personal Productivity Coach template uses
+  this to pull your next few events as context for every check-in
 - **Sheets** — genuine spreadsheet editing, not just file overwrite: a
   Sheets node can create a spreadsheet, read it, or upsert a row - find a
   row by matching its first column against a key, update that row in
@@ -85,28 +93,6 @@ Drive tool integrations. Pairs with the React frontend in
   check. A single run can update several rows at once (one per line of the
   previous node's output), since one email check will often touch more
   than one thing being tracked (`app/sheets_client.py`)
-- **Domain-wide delegation** (Google Workspace only) — a second, optional
-  way for an Email/Drive/Calendar/Sheets node to act as a specific
-  person, without that person ever clicking Connect. A Workspace super
-  admin authorizes one service account, once, to impersonate anyone in
-  the organization for chosen scopes; from then on, any node's
-  **Impersonate** field can target that address directly. Genuinely
-  different from personal OAuth, not a variant of it - no browser
-  redirect at all, so it sidesteps Google's redirect-URI restrictions
-  entirely (see the callout above) and works from a `.local`/LAN-IP-only
-  hub without a workaround. A bigger trust decision than a personal
-  connection (one credential, many mailboxes), so it's admin-only to set
-  up (`app/service_account_auth.py`)
-- **Built-in dynamic DNS (DuckDNS)** — the actual fix for Google's
-  redirect-URI restrictions, not a manual one-time workaround: paste a
-  free DuckDNS token and subdomain into Settings, and the hub keeps that
-  domain pointed at itself automatically from then on, checking every 5
-  minutes in the background - including recovering on its own if the
-  LAN IP ever changes after a reboot, the same failure mode that would
-  otherwise silently break a manually-configured dynamic DNS setup. The
-  redirect-URI warning banner detects this and switches from generic
-  advice to naming the exact address to use once it's set up
-  (`app/dynamic_dns.py`)
 - **Telegram** — named bots (shared or private, same model as knowledge
   bases), not one connection per person: create as many as you want (just a
   token from @BotFather, no Google Cloud setup), and each Telegram node in a
@@ -134,15 +120,16 @@ Drive tool integrations. Pairs with the React frontend in
   session (`app/public_routes.py`). Runs as the flow's owner, since there's
   no logged-in person to act as for an external caller
 - **Calculator** — evaluates a math expression safely (no `eval()`)
-- Knowledge bases, flows, and Gmail/Drive connections are all **per-person**,
-  with shared-vs-private visibility and admin oversight, for a small team
-  sharing one hub
+- Knowledge bases and flows are **per-person**, with shared-vs-private
+  visibility and admin oversight, for a small team sharing one hub. Google
+  access is hub-wide (one service account), not per-person - see the
+  Google setup section below for why
 
 ## Quickstart
 
 **Deploying to an actual Raspberry Pi 5?** See `deploy/README.md` for the
-full walkthrough (flashing the OS, the install script, systemd, Gmail/Drive
-redirect URIs). What follows below is the quick local/dev version.
+full walkthrough (flashing the OS, the install script, systemd). What
+follows below is the quick local/dev version.
 
 ```bash
 pip install -r requirements.txt --break-system-packages   # drop the flag on a normal venv
@@ -175,11 +162,9 @@ python3 tests/test_llm_provider_errors.py   # LLM provider errors are clean mess
 python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection carries forward correctly
 python3 tests/test_telegram_triggers.py   # Message a bot, get an auto-reply with real memory - zero /run calls
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
-python3 tests/test_calendar.py   # Calendar OAuth, listing/creating events, and using both from a flow
-python3 tests/test_sheets.py   # Sheets OAuth, and the upsert behavior a real progress tracker needs
-python3 tests/test_google_oauth_warning.py   # Warns before Google rejects a .local/raw-IP redirect URI
-python3 tests/test_service_account_impersonation.py   # Domain-wide delegation - real JWT, signature independently verified
-python3 tests/test_dynamic_dns.py   # DuckDNS auto-updates, and survives a simulated IP change unattended
+python3 tests/test_calendar.py   # Calendar via the service account, listing/creating events, and using both from a flow
+python3 tests/test_sheets.py   # The upsert behavior a real progress tracker needs, via the service account
+python3 tests/test_service_account_impersonation.py   # The full SIRIM scenario - real JWT, signature independently verified
 python3 tests/test_robots_hardening.py   # robots.txt and noindex headers
 python3 tests/test_youtube.py   # Search a topic, view counts included, then an LLM turns it into video ideas
 python3 tests/test_llm_node_context.py   # An LLM after a tool node sees both the tool output AND the original message
@@ -211,175 +196,91 @@ hub-wide LLM provider settings.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | Optional fallback - the Settings page is the intended way to set these now, and always takes priority if both are set |
 
 The **LLM provider** (OpenRouter API key/model, or Ollama base URL/model)
-and the **Google OAuth client** (Gmail/Drive) aren't environment variables -
+and the **Google service account key** aren't environment variables -
 both are set at runtime by a hub admin on the Settings page, stored in
-SQLite, with secrets encrypted using the same vault as OAuth tokens. This is
-deliberate: these are the settings a non-technical admin should be able to
-change without SSHing into the Pi or opening a config file, and Google
-credentials in particular take effect immediately - no restart, since
-`google_oauth.py` reads them fresh on every request rather than caching them
+SQLite, with secrets encrypted using the same vault as everything else. This
+is deliberate: these are the settings a non-technical admin should be able
+to change without SSHing into the Pi or opening a config file, and the
+Google key in particular takes effect immediately - no restart, since
+`hub_settings.py` reads it fresh on every request rather than caching it
 at startup.
 
 On first real request with `EMBEDDING_PROVIDER=local`, `fastembed` downloads
 the small model (~130MB for `bge-small`) and caches it — needs internet once,
 then works fully offline.
 
-### Setting up Gmail + Drive + Calendar + Sheets (one-time, per deployment)
+### Setting up Google (Gmail + Drive + Calendar + Sheets)
 
-All of this happens from the **Settings** page in the app now - no config
-file to open. Four steps, not two - the first and last are easy to miss and
-are the most common reason connecting fails:
+One hub-wide service account, not a per-person OAuth flow - no browser
+consent screen, no redirect URI to get right, and so none of the
+`.local`/raw-IP restrictions a browser-based OAuth flow would run into,
+since there's no browser redirect involved at any point.
 
-1. In [Google Cloud Console](https://console.cloud.google.com), create a
-   project.
-2. **Enable the APIs**: APIs & Services → Library → search for and enable
-   **Gmail API**, **Google Drive API**, **Google Calendar API**, and
-   **Google Sheets API** (all four, even if you only plan to use one right
-   now - each is free to enable and costs nothing to leave on). Creating
-   OAuth credentials without this step lets someone connect, but every
-   actual send/list/read/update call then fails.
-3. Configure the **OAuth consent screen**: User Type "External" (unless you
-   have Google Workspace), fill in the required fields. While it's in
-   **Testing** mode (the default, and fine for a small team), Google will
-   silently refuse to let anyone sign in who isn't listed under **Test
-   users** on that same page - add every team member's Google account there.
-   This is far and away the most common cause of "I click Connect and it
-   just fails."
-4. Create **one** OAuth client ID (Credentials → Create Credentials → OAuth
-   client ID → type "Web application") — Gmail, Drive, Calendar, and Sheets
-   all share it. The Settings page shows the exact four redirect URIs to
-   add here (they're derived from however you're currently reaching the
-   hub, so they're always right - a "Copy" button sits next to each one).
-   **If the Settings page shows a red warning above those URIs, read it
-   before pasting anything into Google Cloud Console** - see the note right
-   after this list; it'll save you a confusing round trip through Google's
-   own error messages.
-5. Paste the client ID and secret into the Settings page and hit Save -
-   takes effect immediately, no restart. (An admin who'd rather set these
-   via `.env`/environment variables instead still can - see the
-   configuration table above - but the Settings page always wins if both
-   are set.)
-6. Each team member connects whichever of the four they want from the
-   Connections page - Gmail, Drive, Calendar, and Sheets are independent
-   connections, so someone can connect just Sheets without Gmail if
-   that's all they need. The first time, Google shows an "unverified app"
-   warning - that's expected for a personal project not submitted for
-   Google's review; click **Advanced → Go to (app name)** to proceed.
+**Setup, in order** (two different Google consoles - mixing up which one
+you're in is the most common way this goes wrong):
 
-If a connection attempt does fail, it now lands on a page explaining the
-likely cause (`app/oauth_errors.py`) instead of a bare error - that's the
-first place to look.
-
-**A hard requirement of Google's, not anything to do with this hub**:
-Google's OAuth client will only accept a redirect URI whose host is either
-`localhost`/`127.0.0.1`, or a domain with a real, ownable public suffix.
-This means **the two most common ways to reach this hub - a `.local` mDNS
-name (the default `agenthub.local`) and a raw LAN IP address - are both
-rejected**, with a genuinely confusing error
-("must use a domain that is a valid top private domain") that has nothing
-to do with anything you did wrong. The Settings and Account pages detect
-this automatically and show a warning right above the redirect URIs box
-if the hub is currently being reached in a way Google won't accept, so
-you see this *before* pasting a doomed URI into Google Cloud Console, not
-after.
-
-**The actual fix, not a one-time workaround**: Settings → **Free remote
-domain (DuckDNS)**. Free at [duckdns.org](https://www.duckdns.org) (sign
-in with an existing Google/GitHub/etc. account, no email verification
-needed) - get a token, pick any subdomain, paste both into that card.
-From then on, the hub keeps that domain pointed at itself automatically,
-checking every 5 minutes in the background (`app/dynamic_dns.py`,
-`scheduler.py`) - including recovering on its own if the LAN IP ever
-changes after a reboot, which would otherwise silently break it. Once
-it's set up, the warning switches from generic advice to naming the exact
-address to use, and every future OAuth connect (any service, any team
-member, forever) just works normally through it - no more `.local`/IP
-rejections to think about again.
-
-If DuckDNS genuinely isn't an option, the one-time fallback still works:
-**do the Connect step from a browser on the same machine the hub runs
-on**, using `http://localhost:8811` instead of the `.local` name or IP -
-Google's other real exception, no domain needed. (An SSH local
-port-forward - `ssh -L 8811:localhost:8811 you@pi` - lets you do this
-from your own laptop without physically sitting at the Pi.) This only
-needs to happen once per person per service, though, so DuckDNS is worth
-setting up first if more than one or two connections are ever expected.
-
-### Setting up domain-wide delegation (Google Workspace only, optional)
-
-Everything above is per-person OAuth: each team member clicks Connect and
-grants access to their own Google account. That has a hard limit -
-Google's OAuth client will only ever redirect to `localhost`/`127.0.0.1`
-or a real public domain, so it can't reach a hub that's only accessible
-by `.local` name or a raw LAN IP (see the callout above), and it always
-needs the actual account owner to personally click Allow.
-
-**Domain-wide delegation is a different mechanism for Google Workspace
-domains specifically**, that sidesteps both of those: a Workspace super
-admin authorizes one service account, once, in the Admin Console (not
-Cloud Console), to act as *any* user in the organization for specific
-Google scopes. From then on, an Email/Drive/Calendar/Sheets node's
-**Impersonate** field can target any address in your Workspace directly -
-no browser redirect, no per-person consent, and nothing for Google's
-redirect-URI rules to reject, since there's no redirect involved at all.
-
-This is a genuinely bigger trust decision than a personal connection -
-one credential that can act as anyone in the domain, for whatever's been
-granted - so it's admin-only to configure, and worth treating the key
-file the same way you'd treat any other admin-level secret.
-
-**Setup, in order** (the two consoles below are different products -
-mixing up which one you're in is the most common way this goes wrong):
-
-1. **In Google Cloud Console** (the same `sirim-coc-agent`-style project
-   used for OAuth, or a fresh one - doesn't matter which):
-   - Enable whichever of Gmail API / Drive API / Calendar API / Sheets API
-     you actually need (IAM & Admin doesn't require all four).
-   - **IAM & Admin → Service Accounts → Create Service Account.** Name it
-     whatever's clear (e.g. "agent-hub-delegation"). No roles need to be
-     granted here - domain-wide delegation is authorized separately, in
-     the Workspace Admin Console, not through IAM roles.
+1. **In Google Cloud Console** (console.cloud.google.com):
+   - Create a project (or use an existing one).
+   - Enable whichever of Gmail API / Drive API / Calendar API / Sheets
+     API you actually need (Library → search → Enable each).
+   - **IAM & Admin → Service Accounts → Create Service Account.** Name
+     it whatever's clear (e.g. "agent-hub"). No IAM roles need to be
+     granted here.
    - Open the new service account → **Keys → Add Key → Create new key →
-     JSON**. This downloads a `.json` file - this is the *only* copy of
-     the private key; Google doesn't keep a spare. Keep it somewhere
-     safe until it's pasted into the hub.
-   - Still on the service account's detail page, copy its **Unique ID** (a
-     long number, sometimes labeled "OAuth2 Client ID" - not the same as
-     the `client_email` in the JSON file). The next step needs this exact
-     number.
-2. **In the Google Workspace Admin Console** (`admin.google.com` - needs a
-   super admin, not just any Workspace user):
-   - **Security → Access and data control → API controls → Domain-wide
-     delegation → Add new**.
-   - **Client ID**: paste the Unique ID copied above.
-   - **OAuth scopes**: a comma-separated list of exactly the scopes you
-     want this service account able to use. Only add what you actually
-     need:
+     JSON**. This downloads the only copy of the private key - keep it
+     safe until step 2.
+2. **In Agent Hub**: Settings → **Google (Gmail / Drive / Calendar /
+   Sheets)** → paste the entire contents of the JSON key file → Save.
+   The card shows "Configured" with the service account's own email
+   once it's accepted.
+3. **On any Email/Drive/Calendar/Sheets node**, the **Impersonate**
+   field decides what it acts as:
+   - **Left blank**: the service account's own identity. Drive/Sheets/
+     Calendar work immediately this way - files land in its own space,
+     or in anything explicitly shared with its email address (exactly
+     like sharing with a colleague). Gmail specifically has no real
+     inbox for a plain service account, so an Email node with no
+     Impersonate set will fail with a clear error pointing at step 4
+     below - unless a Workspace admin has specifically provisioned a
+     mailbox for the service account itself, which is unusual.
+   - **Set to a real address**: acts as that specific person instead -
+     needs step 4.
+4. **For impersonating a real person** (only needed if a node should
+   act as someone specific - e.g. reading an existing person's Gmail): a
+   Google Workspace super admin authorizes this exact service account,
+   once, in the **Workspace Admin Console** (admin.google.com - a
+   different product from Cloud Console, needing different, higher
+   access):
+   - **Security → Access and data control → API controls →
+     Domain-wide delegation → Add new**.
+   - **Client ID**: the service account's **Unique ID** (a long number,
+     sometimes labeled "OAuth2 Client ID" - found on its detail page in
+     Cloud Console, not the same as the `client_email` in the JSON
+     file).
+   - **OAuth scopes**, comma-separated - only what's actually needed:
+
      | Node | Scope |
      |---|---|
      | Email | `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify` |
      | Drive | `https://www.googleapis.com/auth/drive` |
      | Calendar | `https://www.googleapis.com/auth/calendar` |
      | Sheets | `https://www.googleapis.com/auth/spreadsheets` |
-   - **Authorize**. This is the step that actually grants the delegation -
-     without it, the service account exists but every impersonation
-     attempt fails with a clear "domain-wide delegation not authorized"
-     error (`app/service_account_auth.py` surfaces this specifically,
-     rather than a generic auth failure, since it's such a common thing
-     to skip or get slightly wrong).
-3. **Back in the hub**: Settings → **Google service account (domain-wide
-   delegation)** → paste the entire contents of the JSON key file → Save.
-   Then use **Test impersonation** right there on the same card - enter
-   the Workspace address you actually want to act as (e.g.
-   `hairil@cytron.io`) and confirm it works *before* wiring it into a real
-   flow. If it fails, the error names the likely cause (scopes not
-   authorized, wrong Client ID, the target address not actually in this
-   Workspace) rather than a generic 403.
-4. **On any Email/Drive/Calendar/Sheets node**, fill in the **Impersonate**
-   field (only visible once step 3 is done) with the Workspace address to
-   act as. Leave it blank on any node that should keep using the person
-   running the flow's own personal connection instead - the two models
-   coexist per-node, not hub-wide.
+
+   - **Authorize.** Skipping this (or getting the Client ID/scopes
+     slightly wrong) is the single most common way impersonation fails -
+     `app/service_account_auth.py` gives a specific "domain-wide
+     delegation not authorized" error for exactly this case, not a
+     generic 403.
+5. Back on the Settings card, use **Test** (Gmail or Sheets, with or
+   without an email address) to confirm this actually works before
+   wiring it into a real flow - leaving the address blank tests the
+   service account's own identity, filling one in tests impersonation.
+
+This is a bigger trust decision than a per-person login would be:
+whoever controls this one key can make it act as anyone a Workspace
+admin has authorized it for, not just themselves - treat the key file
+the same way you'd treat any other admin-level credential. Setting it up
+is admin-only for exactly this reason.
 
 ### Setting up Telegram (no cloud console needed)
 
@@ -657,54 +558,32 @@ node, not just a final answer.
 
 ## Design notes / why it's built this way
 
-- **DuckDNS is automated, not just documented, because the manual version
-  fails silently.** Telling someone to create a DuckDNS account and point
-  it at their LAN IP by hand solves the problem exactly once - the moment
-  their Pi's IP changes after a reboot (no DHCP reservation is unusual,
-  not exceptional), the domain goes stale and Google connections start
-  failing again with no obvious cause, since nothing *looks* broken until
-  someone tries to connect a new service. A background job that
-  re-asserts the IP every 5 minutes (`scheduler.py`, same pattern as the
-  Telegram trigger poller) means this can't happen - proven directly in
-  `test_dynamic_dns.py` by simulating an IP change and confirming the job
-  catches it on its own, not just that the initial save works.
-- **A DuckDNS/Tailscale-style domain doesn't change who can reach this
-  hub - it's worth saying plainly, not just trusting people to reason it
-  through.** The hub's actual IP stays a private, non-routable address
-  either way; a DNS name pointing at a private IP is meaningless to
-  anyone outside the LAN, since their own device would try to reach that
-  address on *their* network, not this one. The DuckDNS Settings card
-  says this directly, in plain language, rather than assuming whoever's
-  reading it already knows how DNS and private IP ranges interact -
-  someone setting this up for the first time has no particular reason to
-  already know that, and "did I just put my hub on the internet" is a
-  reasonable, common worry to have in the moment, not one to leave
-  unaddressed until someone happens to ask. For anyone who wants
-  stricter isolation than "reachable by anyone on this network with a
-  login" (a fair thing to want, distinct from "is this on the public
-  internet"), the same card points at Tailscale by name rather than
-  silently assuming DuckDNS covers every access-control need it doesn't
-  actually address.
-- **`X-Robots-Tag: noindex` on every response, plus a disallow-all
-  `robots.txt`** - cheap, standard hardening for the fact that giving the
-  hub a real DNS name (DuckDNS or otherwise) means a search engine
-  *could* eventually try to crawl it if a network setup ever changed
-  later in a way that made it briefly reachable. Costs nothing for the
-  overwhelming majority of installs where this was never a real risk,
-  and is a normal default for any admin-style tool, not specific to this
-  feature.
-- **Domain-wide delegation is additive, not a replacement for per-user
-  OAuth** - a real design decision, not the default choice. Replacing
-  OAuth entirely would break the hub for anyone not on Google Workspace
-  (personal Gmail accounts can't use domain-wide delegation at all - it's
-  a Workspace-only mechanism), so both live side by side: an
-  **Impersonate** field on a node, left blank, behaves exactly as before
-  this existed; filled in, it switches that one node to service-account
-  auth for that one call. The two models are genuinely different things
-  (see `service_account_auth.py`'s docstring) sharing the same client
-  modules (`gmail_client.py`/`drive_client.py`/`calendar_client.py`/
-  `sheets_client.py` each just branch in `_headers()` on whether
-  `impersonate` was passed), not one flow with a toggle.
+- **Google access became one hub-wide service account, replacing
+  per-person OAuth entirely** - a real architectural pivot, not an
+  incremental addition. The earlier per-person OAuth model hit a genuine
+  wall: Google's OAuth client will only ever accept a redirect URI whose
+  host is `localhost`/`127.0.0.1` or a domain with a real public suffix,
+  which a self-hosted hub reached by `.local` name or a raw LAN IP could
+  never satisfy without extra infrastructure (a dynamic-DNS domain, an
+  SSH tunnel) just to make a browser-based consent flow possible. A
+  service account has no browser redirect at all, so that whole class of
+  problem doesn't apply - not worked around, just absent. The tradeoff
+  is a bigger trust surface (one credential that can act as anyone a
+  Workspace admin has authorized it for, versus a personal login that
+  only ever grants access to the one account that clicked Allow), which
+  is why setting the key is admin-only.
+- **Every Email/Drive/Calendar/Sheets node shares one `impersonate`
+  parameter with two meanings, not two separate features.** Left blank,
+  a node acts as the service account's own identity - genuinely useful
+  for Drive/Sheets/Calendar (its own space, or anything shared with its
+  email address), and a clean, specific failure for Gmail (no real inbox
+  by default). Set to a real address, it acts as that Workspace person
+  instead, which needs a super admin to have authorized domain-wide
+  delegation for this exact service account and scope. Both paths run
+  through the same `service_account_auth.get_access_token()` - the only
+  difference is whether a `sub` claim is present in the signed JWT (see
+  its docstring) - so every `*_client.py` module has one auth code path,
+  not a branch between two systems.
 - **Hand-rolled RS256 JWT signing, not `google-auth`.** Consistent with
   every other Google integration in this codebase (plain httpx REST calls
   instead of the official SDKs) - a service account token exchange is
@@ -714,14 +593,11 @@ node, not just a final answer.
   plausible-looking ones, by decoding a real signed JWT in testing and
   checking the signature against the public key directly - independent
   proof it's spec-correct, not just "the mocked HTTP call accepted it."
-- **`google_oauth_warning_for` looks for `.local` names and raw IPs
-  before Google gets a chance to reject them.** Found via a real user
-  hitting Google's actual error screen - `google_oauth.py`'s docstring
-  had claimed "no public domain needed" right up until that happened.
-  Now the Settings/Account pages warn before anyone pastes a doomed URI
-  into Google Cloud Console, and the fix (a domain, even a free
-  dynamic-DNS one pointed at a private IP, or a localhost tunnel) is
-  stated directly in the warning rather than left as a mystery error.
+- **`X-Robots-Tag: noindex` on every response, plus a disallow-all
+  `robots.txt`** - cheap, standard hardening for any admin-style tool,
+  kept even after the service-account switch removed the specific
+  DNS-exposure scenario it was originally added for. Costs nothing for
+  the overwhelming majority of installs where it was never a real risk.
 
 - **Sheets is a real API integration, not a bigger Drive node.** Drive
   treats a file as an opaque blob - creating one works fine, but "editing"
@@ -834,16 +710,13 @@ node, not just a final answer.
   YouTube's public catalog isn't attributable to anyone, so there's no
   account to connect and no reason to make every team member set it up
   individually - one key, admin-configured, same as Tavily.
-- **Calendar is a third sibling of Gmail/Drive, not a variant.** Adding a
-  new Google product connection is almost entirely mechanical because the
-  OAuth machinery was already generic: `calendar_oauth.py` /
-  `calendar_tokens.py` / `calendar_client.py` / `calendar_routes.py` mirror
-  the Gmail files field-for-field, differing mainly in scopes
-  (`calendar.events`, read/write on events but not calendar settings) and
-  the API calls themselves. It's a genuinely separate OAuth connection from
-  Gmail/Drive, not an added scope on an existing one - someone who already
-  connected Gmail isn't silently granted Calendar access, and connecting
-  Calendar doesn't force a Gmail re-consent.
+- **Calendar is a third sibling of Gmail/Drive/Sheets, not a variant.**
+  Adding a new Google product is almost entirely mechanical because the
+  service-account auth is already generic - `calendar_client.py` mirrors
+  the shape of `gmail_client.py`/`drive_client.py`/`sheets_client.py`
+  field-for-field (a `SCOPES` list, an `_headers(impersonate)` helper
+  that calls `service_account_auth.get_access_token`, then plain REST
+  calls), differing mainly in scopes and the API calls themselves.
 - **A tool node's output augments the original message for the next LLM
   node - it doesn't replace it.** Found while building the Calendar
   template: chaining Knowledge base/Web search/Calendar into an LLM node
@@ -911,16 +784,20 @@ node, not just a final answer.
   system can, including the one-time path for claiming a pre-password
   account without losing its id/role/history.
 - **Per-user credentials resolve through one function each**
-  (`user_settings.resolve_google_credentials`,
-  `user_settings.resolve_openrouter_credentials`) that every caller goes
-  through - `google_oauth.py`'s functions take `client_id`/`client_secret`
-  as plain arguments rather than looking anything up themselves, so there's
-  exactly one place that decides "personal, or fall back to hub-wide." The
-  Account page fetches both `/api/settings` (hub-wide, readable by anyone)
-  and `/api/account/settings` (personal) and computes the same "which one's
-  actually active" logic client-side, so the UI states what's in effect
-  right now rather than just listing two separate config forms and leaving
-  the relationship to be inferred.
+  (`user_settings.resolve_openrouter_credentials`,
+  `resolve_web_search_api_key`, `resolve_youtube_api_key`) that every
+  caller goes through, so there's exactly one place that decides
+  "personal, or fall back to hub-wide." Google has no equivalent - one
+  hub-wide service account, not a per-person setting - which is itself
+  a deliberate simplification: a shared credential that can act as
+  anyone a Workspace admin authorizes doesn't have a sensible "personal
+  override" version the way an LLM API key does. The Account page
+  fetches both `/api/settings` (hub-wide, readable by anyone) and
+  `/api/account/settings` (personal) and computes the same "which one's
+  actually active" logic client-side for the settings that do have a
+  personal option, so the UI states what's in effect right now rather
+  than just listing two separate config forms and leaving the
+  relationship to be inferred.
 - **No LangChain/LlamaIndex, no google-api-python-client, no agent
   framework.** Chunking is ~30 readable lines (`app/chunking.py`), the flow
   engine is one file you can read top to bottom (`app/flow_engine.py`), and
@@ -937,14 +814,13 @@ node, not just a final answer.
 - **One Chroma collection per knowledge base**, not one big collection
   filtered by KB id. Makes delete-a-KB and per-KB stats trivial, and access
   control never has to leak into vector queries.
-- **`google_oauth.py` / `google_tokens.py` are provider-agnostic.** Gmail and
-  Drive are each a thin ~20-line wrapper (their own scopes + redirect URI)
-  over shared connect/refresh/store logic — adding a third Google product
-  later (Calendar, say) is mostly copying one of those wrappers.
-- **Drive write access defaults to the narrower `drive.file` scope**, not
-  full `drive` — the hub can create files and edit ones it created, but can't
-  silently modify a pre-existing document it never touched. Broaden the scope
-  in `drive_oauth.py` if a team needs to edit arbitrary existing files.
+- **Drive uses the full `drive` scope, not the narrower `drive.file`.**
+  With a shared service account rather than a personal login, `drive.file`
+  would only let it see files it created itself - too limiting for the
+  common case of pointing it at an existing folder or spreadsheet someone
+  else set up and explicitly shared with its email address. Worth knowing
+  if this ever needs tightening for a specific deployment - change the
+  scope in `drive_client.py`.
 - **Calculator uses `simpleeval`, never `eval()`.** Once an expression can
   contain arbitrary agent/LLM output, raw `eval()` is a code-execution hole.
 - **Every Google/LLM API call re-refreshes/re-authenticates per request**
@@ -969,18 +845,6 @@ node, not just a final answer.
   via the `INVOCATION_ID` env var systemd sets - no `sudo systemctl restart`
   needed from inside a web-facing process, which would've been a much bigger
   privilege-escalation surface for not much benefit.
-- **OAuth failures render a page explaining what went wrong**
-  (`app/oauth_errors.py`), not a raw 500 or a 422 for a "missing" `code`
-  parameter. That second case isn't an edge case - it's exactly what happens
-  every time someone hits Cancel, or isn't an approved test user yet, since
-  Google redirects back with `?error=...` and no code at all.
-- **The Gmail/Drive redirect URI is derived from the request, not
-  configured** (`google_oauth.redirect_uri_for`). It's whatever host/port
-  someone is actually using to reach the hub when they click Connect -
-  nothing to keep in sync if the hub is reachable by more than one hostname
-  (`agenthub.local` and a raw IP, say), as long as every one actually used
-  is also registered in Google Cloud Console. The Settings page shows the
-  live computed value so there's something exact to copy in.
 - **`config.py` loads `backend/.env` itself** (via `python-dotenv`) rather
   than relying on the OS to inject it - `.env` files "just working" on
   Windows the same way they do on Linux/systemd was worth a two-line

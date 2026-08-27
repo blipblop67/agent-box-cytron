@@ -1,35 +1,32 @@
 """
 Thin wrapper around the Google Calendar API v3 - list upcoming events and
 create new ones. Raw REST rather than the official Google client library,
-same reasoning as gmail_client.py/drive_client.py: three or four endpoints
-don't need a whole SDK.
+same reasoning as service_account_auth.py: three or four endpoints don't
+need a whole SDK.
 
-Every function takes an optional `impersonate` email - see gmail_client.py's
-docstring for why this is a separate auth path from personal OAuth, not a
-flag on the same one.
+Authenticates entirely through the hub-wide Google service account.
+`impersonate` left blank operates on the service account's own calendar
+(needs a calendar to actually be shared with its email address first -
+its "primary" calendar otherwise has nothing on it). Setting
+`impersonate` acts on that Workspace person's own calendar instead
+(needs domain-wide delegation authorized for the Calendar scope).
 """
 from datetime import datetime, timezone
 
 import httpx
 
-from . import calendar_tokens, hub_settings, service_account_auth
+from . import hub_settings, service_account_auth
 
 API_BASE = "https://www.googleapis.com/calendar/v3"
 
-IMPERSONATION_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
-def _headers(user_id: str, impersonate: str | None = None) -> dict:
-    if impersonate:
-        key_info = hub_settings.get_service_account_key()
-        if key_info is None:
-            raise ValueError(
-                "This node is set to act as a specific person, but no Google service account is "
-                "configured on the Settings page yet."
-            )
-        token = service_account_auth.get_access_token_for(key_info, impersonate, IMPERSONATION_SCOPES)
-    else:
-        token = calendar_tokens.get_valid_access_token(user_id)
+def _headers(impersonate: str | None = None) -> dict:
+    key_info = hub_settings.get_service_account_key()
+    if key_info is None:
+        raise ValueError("Calendar isn't configured yet - add a Google service account key on the Settings page")
+    token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -37,23 +34,23 @@ def _now_rfc3339() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def list_events(user_id: str, max_results: int = 10, time_min: str | None = None,
+def list_events(max_results: int = 10, time_min: str | None = None,
                  *, impersonate: str | None = None) -> list[dict]:
-    """Upcoming events on the person's primary calendar, soonest first.
-    `time_min` defaults to right now, so past events don't show up in
-    what's meant to be a "what's coming up" view."""
+    """Upcoming events on the primary calendar, soonest first. `time_min`
+    defaults to right now, so past events don't show up in what's meant
+    to be a "what's coming up" view."""
     params = {
         "maxResults": max_results,
         "singleEvents": True,  # expands recurring events into individual instances
         "orderBy": "startTime",
         "timeMin": time_min or _now_rfc3339(),
     }
-    resp = httpx.get(f"{API_BASE}/calendars/primary/events", headers=_headers(user_id, impersonate), params=params, timeout=30)
+    resp = httpx.get(f"{API_BASE}/calendars/primary/events", headers=_headers(impersonate), params=params, timeout=30)
     resp.raise_for_status()
     return [_parse_event(e) for e in resp.json().get("items", [])]
 
 
-def create_event(user_id: str, summary: str, start: str, end: str, *,
+def create_event(summary: str, start: str, end: str, *,
                   description: str = "", location: str = "", timezone_name: str = "UTC",
                   attendees: list[str] | None = None, impersonate: str | None = None) -> dict:
     """`start`/`end` are ISO 8601 datetimes (e.g. "2026-09-01T14:00:00") -
@@ -69,7 +66,7 @@ def create_event(user_id: str, summary: str, start: str, end: str, *,
     }
     if attendees:
         body["attendees"] = [{"email": a} for a in attendees]
-    resp = httpx.post(f"{API_BASE}/calendars/primary/events", headers=_headers(user_id, impersonate), json=body, timeout=30)
+    resp = httpx.post(f"{API_BASE}/calendars/primary/events", headers=_headers(impersonate), json=body, timeout=30)
     resp.raise_for_status()
     return _parse_event(resp.json())
 

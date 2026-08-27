@@ -1,32 +1,24 @@
 """
 Hub-wide settings an admin sets once from the Settings page, instead of
-editing config files: the LLM provider, Google OAuth app credentials for
-Gmail/Drive/Calendar, a web search API key, a YouTube API key, and outgoing
-SMTP settings (for password-reset emails). Secrets (OpenRouter key, Google
-client secret, Tavily key, YouTube key, SMTP password) are encrypted at
-rest with the same vault used for OAuth tokens.
-
-Google's redirect URIs are deliberately *not* a setting here - they're
-derived from the request that hits /auth/start (see gmail_routes.py /
-drive_routes.py / calendar_routes.py), so there's nothing to keep in sync
-with however someone happens to be reached (hostname, IP, port). The
-Settings page shows the computed values so there's something exact to
-paste into Google Cloud Console.
+editing config files: the LLM provider, a Google service account key
+(the only way this hub talks to Google - see service_account_auth.py), a
+web search API key, a YouTube API key, and outgoing SMTP settings (for
+password-reset emails). Secrets (OpenRouter key, the service account
+key, Tavily key, YouTube key, SMTP password) are encrypted at rest with
+the same vault used elsewhere in this hub.
 """
-from . import config, crypto_vault, db, service_account_auth
+from . import crypto_vault, db, service_account_auth
 
 DEFAULTS = {
     "llm_provider": "openrouter",         # "openrouter" | "ollama"
     "openrouter_model": "",               # e.g. "anthropic/claude-3.5-haiku" - admin picks
     "ollama_base_url": "http://localhost:11434",
     "ollama_model": "",                   # e.g. "llama3.1" - admin picks whatever they've pulled
-    "google_client_id": "",
     "smtp_host": "",
     "smtp_port": "587",
     "smtp_username": "",
     "smtp_from_address": "",
     "smtp_use_tls": "true",               # "true" -> STARTTLS on smtp_port (587 typical); "false" -> implicit TLS (465 typical)
-    "duckdns_subdomain": "",
 }
 
 
@@ -36,14 +28,7 @@ def get_settings() -> dict:
         value = db.get_setting(key)
         if value is not None:
             settings[key] = value
-    # env vars are a fallback for people who'd rather configure via .env /
-    # systemd than the UI - the UI always takes priority once someone uses it
-    if not settings["google_client_id"]:
-        settings["google_client_id"] = config.GOOGLE_CLIENT_ID
     settings["openrouter_key_configured"] = db.get_setting("openrouter_api_key_encrypted") is not None
-    settings["google_client_secret_configured"] = (
-        db.get_setting("google_client_secret_encrypted") is not None or bool(config.GOOGLE_CLIENT_SECRET)
-    )
     settings["web_search_key_configured"] = db.get_setting("web_search_api_key_encrypted") is not None
     settings["youtube_key_configured"] = db.get_setting("youtube_api_key_encrypted") is not None
     settings["smtp_use_tls"] = settings["smtp_use_tls"] == "true"
@@ -59,24 +44,16 @@ def get_settings() -> dict:
             )["client_email"]
         except service_account_auth.ServiceAccountError:
             pass  # a corrupted stored key shouldn't crash the settings page - just shows blank
-    settings["duckdns_token_configured"] = db.get_setting("duckdns_token_encrypted") is not None
-    settings["duckdns_configured"] = bool(settings["duckdns_subdomain"]) and settings["duckdns_token_configured"]
-    settings["duckdns_last_updated_ip"] = db.get_setting("duckdns_last_updated_ip") or ""
-    last_updated_at = db.get_setting("duckdns_last_updated_at")
-    settings["duckdns_last_updated_at"] = float(last_updated_at) if last_updated_at else None
-    settings["duckdns_last_error"] = db.get_setting("duckdns_last_error") or ""
     return settings
 
 
 def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str | None = None,
                      openrouter_model: str | None = None, ollama_base_url: str | None = None,
-                     ollama_model: str | None = None, google_client_id: str | None = None,
-                     google_client_secret: str | None = None, web_search_api_key: str | None = None,
+                     ollama_model: str | None = None, web_search_api_key: str | None = None,
                      youtube_api_key: str | None = None, smtp_host: str | None = None,
                      smtp_port: str | None = None, smtp_username: str | None = None,
                      smtp_password: str | None = None, smtp_from_address: str | None = None,
-                     smtp_use_tls: bool | None = None, google_service_account_key: str | None = None,
-                     duckdns_subdomain: str | None = None, duckdns_token: str | None = None) -> None:
+                     smtp_use_tls: bool | None = None, google_service_account_key: str | None = None) -> None:
     if llm_provider is not None:
         db.set_setting("llm_provider", llm_provider)
     if openrouter_model is not None:
@@ -87,10 +64,6 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
         db.set_setting("ollama_model", ollama_model)
     if openrouter_api_key:  # only overwrite if a new one was actually provided
         db.set_setting("openrouter_api_key_encrypted", crypto_vault.encrypt(openrouter_api_key).decode())
-    if google_client_id is not None:
-        db.set_setting("google_client_id", google_client_id)
-    if google_client_secret:  # only overwrite if a new one was actually provided
-        db.set_setting("google_client_secret_encrypted", crypto_vault.encrypt(google_client_secret).decode())
     if web_search_api_key:  # only overwrite if a new one was actually provided
         db.set_setting("web_search_api_key_encrypted", crypto_vault.encrypt(web_search_api_key).decode())
     if youtube_api_key:  # only overwrite if a new one was actually provided
@@ -110,10 +83,6 @@ def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str 
     if google_service_account_key:  # only overwrite if a new one was actually provided
         service_account_auth.parse_key(google_service_account_key)  # raises a clear error before storing garbage
         db.set_setting("google_service_account_key_encrypted", crypto_vault.encrypt(google_service_account_key).decode())
-    if duckdns_subdomain is not None:
-        db.set_setting("duckdns_subdomain", duckdns_subdomain)
-    if duckdns_token:  # only overwrite if a new one was actually provided
-        db.set_setting("duckdns_token_encrypted", crypto_vault.encrypt(duckdns_token).decode())
 
 
 def get_openrouter_api_key() -> str | None:
@@ -121,17 +90,6 @@ def get_openrouter_api_key() -> str | None:
     if stored is None:
         return None
     return crypto_vault.decrypt(stored.encode())
-
-
-def get_google_client_id() -> str:
-    return db.get_setting("google_client_id") or config.GOOGLE_CLIENT_ID or ""
-
-
-def get_google_client_secret() -> str:
-    stored = db.get_setting("google_client_secret_encrypted")
-    if stored:
-        return crypto_vault.decrypt(stored.encode())
-    return config.GOOGLE_CLIENT_SECRET or ""
 
 
 def get_web_search_api_key() -> str | None:
@@ -171,14 +129,3 @@ def get_service_account_key() -> dict | None:
     if stored is None:
         return None
     return service_account_auth.parse_key(crypto_vault.decrypt(stored.encode()))
-
-
-def get_duckdns_credentials() -> tuple[str, str] | None:
-    """(subdomain, token), or None if DuckDNS hasn't been set up - the one
-    thing scheduler.py's periodic refresh job and the manual "update now"
-    endpoint both need before calling dynamic_dns.update()."""
-    subdomain = db.get_setting("duckdns_subdomain")
-    token_enc = db.get_setting("duckdns_token_encrypted")
-    if not subdomain or not token_enc:
-        return None
-    return subdomain, crypto_vault.decrypt(token_enc.encode())
