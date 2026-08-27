@@ -324,7 +324,7 @@ TEMPLATES = [
     {
         "id": "personal-productivity-coach",
         "name": "Personal Productivity Coach",
-        "description": "An ongoing coach for goals and habits - remembers what you're working on from one check-in to the next, and pulls your upcoming calendar events as context for every message. Use Chat, and keep coming back to the same conversation rather than starting a new one each time. Connect Google Calendar on the Connections page for the calendar awareness to work.",
+        "description": "An ongoing coach for goals and habits - remembers what you're working on from one check-in to the next, and pulls your upcoming calendar events as context for every message. Use Chat, and keep coming back to the same conversation rather than starting a new one each time. Set up a Google service account on the Settings page, then set the Calendar node's Impersonate field to your own address for the calendar awareness to work.",
         "graph": {
             "nodes": [
                 {"id": "in", "type": "input", "position": _pos(0), "data": {}},
@@ -385,9 +385,11 @@ TEMPLATES = [
             "the Sheets node's action switched to \"Create a new spreadsheet\" (fill in a title and "
             "headers like \"Application ID, Status, Notes\"), copy the spreadsheet ID it returns, then "
             "switch the node back to \"Update a row\" and paste that ID in. After that, put this flow "
-            "on a Schedule (e.g. every few hours) for a tracker that keeps itself current. Needs Gmail "
-            "and Sheets connected on the Connections page - adjust the Email node's search query to "
-            "match how certification emails actually show up in your inbox."
+            "on a Schedule (e.g. every few hours) for a tracker that keeps itself current. Needs a "
+            "Google service account set up on the Settings page, with both this flow's Email and "
+            "Sheets nodes pointed at whoever's inbox you're tracking via their Impersonate field - "
+            "adjust the Email node's search query to match how certification emails actually show up "
+            "in that inbox."
         ),
         "graph": {
             "nodes": [

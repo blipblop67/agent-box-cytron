@@ -180,7 +180,7 @@ function ImpersonateField({ data, patch }) {
         type="email"
         value={data.impersonate || ''}
         onChange={(e) => patch({ impersonate: e.target.value })}
-        placeholder="hairil@cytron.io"
+        placeholder="name@yourcompany.com"
       />
     </Field>
   )

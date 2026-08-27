@@ -4,6 +4,14 @@ Build and run AI agents on your own hardware - a visual flow builder, RAG
 over your own documents, Gmail/Drive tools, and a hub-wide choice of
 OpenRouter or a local Ollama model, all running on a Raspberry Pi 5.
 
+**Setting this up for someone to actually use — yourself, a team, a
+customer?** Start with [`GETTING_STARTED.md`](GETTING_STARTED.md) instead
+of this file - a complete walkthrough from "nothing installed" to a
+working team, written for the person using the product rather than the
+person maintaining its code. What follows below is the technical/developer
+reference: architecture, design rationale, and where to find things in
+the codebase.
+
 ```
 agent-hub/
 ├── backend/    FastAPI app - flow engine, RAG, Gmail/Drive, scheduler, API
@@ -51,8 +59,9 @@ all from the browser, with user data structurally outside anything an
 update touches), real password authentication (bcrypt, server-side
 sessions, admin password reset and removal - not the name-only stub earlier
 versions of this project used), per-person credentials (anyone can set
-their own Google OAuth app or OpenRouter key on the Account page, which
-take priority over the hub-wide defaults for that person only), and three
+their own OpenRouter key on the Account page, which takes priority over
+the hub-wide default for that person only - Google has no per-person
+setting, it's one hub-wide service account), and three
 capabilities added specifically to close the gap between "can build a flow"
 and "can build the kind of assistant people actually ask for": conversation
 memory (Chat, not just Run - a flow remembers earlier turns), a web search
@@ -77,10 +86,10 @@ adopting (a flow callable as an API), what's a bigger lift worth queuing
 here, including a real 2026 CVE in Langflow rooted in exactly the
 auth-optional-by-default and raw-code-execution patterns this project
 avoided from the start. Most recently: Google Calendar joined Gmail/Drive
-as a third independent connection (list or create events; the Personal
+as a third Google integration (list or create events; the Personal
 Productivity Coach template pulls upcoming events as context for every
 check-in), and a YouTube search node (API-key-based, like web search, not
-an OAuth connection - searching isn't "acting as" anyone) powers a new
+tied to any one identity) powers a new
 YouTube Video Idea Generator template that searches a topic and proposes
 concrete new videos based on what's already covered. Building Calendar
 surfaced a real, pre-existing bug affecting every tool-then-LLM template:

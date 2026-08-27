@@ -81,43 +81,49 @@ http://agenthub.local:8811
 (swap `agenthub` for whatever hostname you chose). First person to open it
 becomes the hub's admin.
 
-## 5. Set up Gmail / Drive / Calendar (optional)
+For everything past this point - first login, configuring an LLM
+provider, building a first flow, connecting Google/Telegram, inviting a
+team - see [`../GETTING_STARTED.md`](../GETTING_STARTED.md), which picks
+up exactly here. Steps 5 and 6 below cover the two pieces specific to a
+Pi deployment (Google and Telegram setup happen the same way regardless
+of platform, but are repeated here for anyone reading this file on its
+own).
 
-Only needed if you want Email/Drive/Calendar nodes to work - each is an
-independent connection, so connect just the ones you need. Everything below
-happens on the **Settings page in the app** - no file to edit on the Pi.
-Two of the sub-steps are easy to miss and will make "Connect" fail with no
-obvious reason if skipped.
+## 5. Set up Google integration (optional)
+
+Only needed if you want Email/Drive/Calendar/Sheets nodes to work. This
+happens entirely on the **Settings page in the app** - no file to edit on
+the Pi, and no browser consent screen for anyone to click through, since
+it's one hub-wide service account rather than a per-person login.
 
 In [Google Cloud Console](https://console.cloud.google.com):
 
 1. Create a project.
-2. **APIs & Services → Library** → enable **Gmail API**, **Google Drive
-   API**, and **Google Calendar API** (enable all three even if you only
-   need one now - each is free). Skip this and connecting *looks* like it
-   works but every actual send/read/list call fails afterward.
-3. **APIs & Services → OAuth consent screen** → User Type "External" → fill
-   in the required fields. While it's in **Testing** mode (the default),
-   add every team member's Google account under **Test users** on that same
-   page - Google blocks sign-in for anyone not listed here, and this is the
-   #1 cause of "I click Connect and nothing works."
-4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**,
-   type "Web application". Leave the browser tab open - the next step tells
-   you exactly what to paste into "Authorized redirect URIs" here.
+2. **APIs & Services → Library** → enable whichever of **Gmail API**,
+   **Google Drive API**, **Google Calendar API**, and **Google Sheets
+   API** you actually need.
+3. **IAM & Admin → Service Accounts → Create Service Account.** No roles
+   need to be granted here.
+4. Open it → **Keys → Add Key → Create new key → JSON**. This downloads
+   the only copy of the private key.
 
-Now, on the hub's **Settings** page (admin only): paste in the Client ID and
-Client Secret from the OAuth client you just created, then copy the three
-redirect URIs shown there into that still-open Google Cloud tab (a "Copy"
-button sits next to each) and save the OAuth client. Hit Save on the
-Settings page too - it takes effect immediately, no restart.
+Now, on the hub's **Settings** page (admin only): find the **Google
+(Gmail / Drive / Calendar / Sheets)** card, paste the entire contents of
+that JSON file, and Save. It takes effect immediately, no restart.
 
-Each team member then connects whichever accounts they want from the
-Connections page - the first time, Google shows an "unverified app"
-warning, which is expected for a personal project; click **Advanced → Go
-to (app name)** to continue.
+Every Email/Drive/Calendar/Sheets node then has an **Impersonate** field.
+Left blank, it acts as the service account's own identity - this works
+right away for Drive/Sheets/Calendar (its own space, or anything shared
+with its email address). Gmail specifically needs a real address there,
+which needs one more one-time step: a Google Workspace super admin
+authorizing this exact service account for domain-wide delegation, once,
+in the Workspace Admin Console (a different site - admin.google.com, not
+Cloud Console). `backend/README.md` has the full walkthrough for that
+step, including the exact scopes to grant.
 
-If a connection attempt fails, it now lands on a page explaining the likely
-cause instead of a bare error - start there.
+Use the **Test** button on the Settings card - with or without an email
+address - to confirm this actually works before wiring it into a real
+flow.
 
 ## 6. Set up Telegram (optional)
 

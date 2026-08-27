@@ -477,7 +477,7 @@ function ServiceAccountCard({ settings, setSettings, isAdmin }) {
               type="email"
               value={testEmail}
               onChange={(e) => setTestEmail(e.target.value)}
-              placeholder="hairil@cytron.io (blank tests the service account's own identity)"
+              placeholder="name@yourcompany.com (blank tests the service account's own identity)"
             />
             <Select value={testScope} onChange={(e) => setTestScope(e.target.value)} className="w-32">
               <option value="gmail">Gmail</option>
