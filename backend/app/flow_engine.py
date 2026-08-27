@@ -10,7 +10,7 @@ learning the system exactly what happened at each step, not just a final answer.
 """
 import json
 
-from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, sheets_client, \
+from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, mcp_client, sheets_client, \
     telegram_client, telegram_tokens, user_settings, vector_store, web_search_client, youtube_client
 from .embeddings import get_embedding_provider
 
@@ -182,6 +182,9 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
 
     if node_type == "call_flow":
         return _execute_call_flow_node(data, node_input, run_input, user_id, history, call_stack)
+
+    if node_type == "mcp":
+        return _execute_mcp_node(data, node_input, run_input)
 
     if node_type == "output":
         return node_input or run_input
@@ -377,6 +380,39 @@ def _execute_call_flow_node(data: dict, node_input: str, run_input: str, user_id
     result = run_flow(target_graph, sub_input, user_id, history=None,
                        flow_id=target_flow_id, call_stack=call_stack)
     return result["output"]
+
+
+def _execute_mcp_node(data: dict, node_input: str, run_input: str) -> str:
+    """Calls one tool on an external MCP server (see mcp_client.py). Tools
+    have arbitrary JSON schemas, so this node expects its input to already
+    be a JSON object matching whatever the chosen tool needs - normally
+    produced by an LLM node just before it, prompted with the tool's own
+    schema (visible in the config panel after "List tools"). If the input
+    isn't valid JSON, it's wrapped as {"input": <the raw text>} instead,
+    which covers the common case of a tool that just takes one string
+    argument, without forcing every simple tool call through a JSON-writing
+    LLM step first."""
+    server_url = data.get("server_url")
+    if not server_url:
+        raise ValueError("This MCP node has no server URL configured")
+    tool_name = data.get("tool_name")
+    if not tool_name:
+        raise ValueError("This MCP node has no tool selected")
+    auth_token = data.get("auth_token") or None
+
+    raw = (node_input or run_input or "").strip()
+    arguments = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            arguments = parsed if isinstance(parsed, dict) else {"input": raw}
+        except json.JSONDecodeError:
+            arguments = {"input": raw}
+
+    try:
+        return mcp_client.call_tool(server_url, tool_name, arguments, auth_token)
+    except mcp_client.McpError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _execute_web_search_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:

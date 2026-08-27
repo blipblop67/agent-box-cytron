@@ -381,6 +381,7 @@ trigger row in [Section 8](#8-the-five-ways-to-run-a-flow).
 | **Calendar** | List upcoming events, or create a new one |
 | **Telegram** | Send a message or read recent ones, through a specific bot |
 | **Call Flow** | Runs a different flow as a step and uses its output — one agent calling another |
+| **MCP** | Calls one tool on an external MCP server — the same kind of server Claude Desktop connects to |
 | **Calculator** | Evaluates a math expression safely |
 | **Output** | The final result of the run |
 
@@ -403,6 +404,15 @@ flow always starts fresh — no memory of the calling flow's conversation
 tool node. A flow can't be made to call itself, directly or through a
 chain of other flows — the hub catches that and gives a clear error
 rather than hanging or crashing.
+
+**MCP is how a flow reaches tools outside Agent Hub entirely** — point a
+node at any MCP server's URL (the same kind of external tool server
+Claude Desktop or Claude.ai connects to), click **List tools** to see
+what it offers, and pick one. The node's input needs to be JSON matching
+that tool's expected arguments — the config panel shows the exact schema
+once you've picked a tool, so an LLM node just before it can be prompted
+to produce the right shape. A tool that only takes one plain argument
+doesn't need JSON at all — plain text gets wrapped automatically.
 
 ## 11. Template tour
 

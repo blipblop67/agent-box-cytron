@@ -1,4 +1,4 @@
-import { LogIn, LogOut, Sparkles, BookOpen, Mail, HardDrive, Calculator, Send, Globe, CalendarDays, Clapperboard, Table, Workflow } from 'lucide-react'
+import { LogIn, LogOut, Sparkles, BookOpen, Mail, HardDrive, Calculator, Send, Globe, CalendarDays, Clapperboard, Table, Workflow, Plug } from 'lucide-react'
 
 // Every node type's display metadata in one place - the palette, the node
 // card, and the config panel all read from this rather than each hardcoding
@@ -15,11 +15,12 @@ export const NODE_REGISTRY = {
   calendar: { label: 'Calendar', icon: CalendarDays, category: 'tool', description: 'List or create calendar events' },
   telegram: { label: 'Telegram', icon: Send, category: 'tool', description: 'Send or read a Telegram chat' },
   call_flow: { label: 'Call Flow', icon: Workflow, category: 'tool', description: 'Run another flow as a step' },
+  mcp: { label: 'MCP', icon: Plug, category: 'tool', description: 'Call a tool on an external MCP server' },
   calculator: { label: 'Calculator', icon: Calculator, category: 'tool', description: 'Evaluate a math expression' },
   output: { label: 'Output', icon: LogOut, category: 'io', description: 'The final result of the run' },
 }
 
-export const PALETTE_ORDER = ['input', 'llm', 'knowledge_base', 'web_search', 'youtube', 'email', 'drive', 'sheets', 'calendar', 'telegram', 'call_flow', 'calculator', 'output']
+export const PALETTE_ORDER = ['input', 'llm', 'knowledge_base', 'web_search', 'youtube', 'email', 'drive', 'sheets', 'calendar', 'telegram', 'call_flow', 'mcp', 'calculator', 'output']
 
 // Full literal class names (not built via string interpolation) so Tailwind's
 // scanner can find them - see FlowNode.jsx for how these get used.
@@ -41,6 +42,7 @@ export const NODE_DEFAULTS = {
   calendar: { action: 'list', max_results: 5, summary: '', start: '', end: '', description: '', location: '', timezone_name: 'UTC', attendees: '' },
   telegram: { bot_id: '', action: 'send', message: '', max_results: 10 },
   call_flow: { target_flow_id: '' },
+  mcp: { server_url: '', auth_token: '', tool_name: '' },
   calculator: { expression: '' },
   output: {},
 }

@@ -69,6 +69,7 @@ export default function ConfigPanel() {
         {node.type === 'sheets' && <SheetsFields data={node.data} patch={patch} />}
         {node.type === 'telegram' && <TelegramFields data={node.data} patch={patch} />}
         {node.type === 'call_flow' && <CallFlowFields data={node.data} patch={patch} />}
+        {node.type === 'mcp' && <McpFields data={node.data} patch={patch} />}
         {node.type === 'calculator' && <CalculatorFields data={node.data} patch={patch} />}
       </div>
     </div>
@@ -516,6 +517,103 @@ function CallFlowFields({ data, patch }) {
         <p className="text-[11px] text-ink-faint">
           {selected.description || 'No description set for this flow.'}
         </p>
+      )}
+    </>
+  )
+}
+
+function McpFields({ data, patch }) {
+  const [tools, setTools] = useState(null)
+  const [listing, setListing] = useState(false)
+  const [listError, setListError] = useState(null)
+
+  async function handleListTools() {
+    setListing(true)
+    setListError(null)
+    try {
+      const result = await api.post('/mcp/list-tools', {
+        server_url: data.server_url,
+        auth_token: data.auth_token || undefined,
+      })
+      setTools(result.tools)
+    } catch (err) {
+      setListError(err.message)
+    } finally {
+      setListing(false)
+    }
+  }
+
+  const matchedTool = tools?.find((t) => t.name === data.tool_name)
+
+  return (
+    <>
+      <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+        Calls one tool on an external MCP server - the same kind of server Claude Desktop or Claude.ai
+        connects to. This node's input should be JSON matching the tool's arguments (usually produced
+        by an LLM node just before it); plain text gets wrapped as a single argument automatically for
+        simple tools that only take one.
+      </p>
+      <Field label="Server URL">
+        <TextInput
+          value={data.server_url || ''}
+          onChange={(e) => patch({ server_url: e.target.value })}
+          placeholder="https://example.com/mcp"
+        />
+      </Field>
+      <Field label="Auth token (optional)" hint="Sent as a Bearer token, if the server needs one">
+        <TextInput
+          type="password"
+          value={data.auth_token || ''}
+          onChange={(e) => patch({ auth_token: e.target.value })}
+        />
+      </Field>
+      <Field label="Tool name">
+        <TextInput
+          value={data.tool_name || ''}
+          onChange={(e) => patch({ tool_name: e.target.value })}
+          placeholder="get_weather"
+        />
+      </Field>
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={handleListTools}
+          disabled={!data.server_url || listing}
+          className="flex items-center gap-1.5 rounded-md border border-line-strong bg-surface-raised px-2.5 py-1.5 text-xs text-ink-muted hover:text-copper disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Search size={13} /> {listing ? 'Listing…' : 'List tools'}
+        </button>
+        {listError && <p className="text-xs text-danger">{listError}</p>}
+      </div>
+      {tools && (
+        tools.length === 0 ? (
+          <p className="text-xs text-ink-faint">This server has no tools.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {tools.map((t) => (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() => patch({ tool_name: t.name })}
+                className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                  t.name === data.tool_name
+                    ? 'border-copper bg-copper/10 text-copper'
+                    : 'border-line-strong text-ink-muted hover:border-copper hover:text-copper'
+                }`}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+      {matchedTool && (
+        <div className="space-y-1 rounded-md border border-line-strong bg-surface-raised px-2.5 py-2">
+          {matchedTool.description && <p className="text-[11px] text-ink-muted">{matchedTool.description}</p>}
+          {matchedTool.inputSchema && Object.keys(matchedTool.inputSchema.properties || {}).length > 0 && (
+            <pre className="overflow-x-auto text-[10px] text-ink-faint">{JSON.stringify(matchedTool.inputSchema, null, 2)}</pre>
+          )}
+        </div>
       )}
     </>
   )

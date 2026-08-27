@@ -107,6 +107,15 @@ Drive tool integrations. Pairs with the React frontend in
   conversation memory), and a flow can't call itself into a cycle -
   direct or indirect - or nest more than 5 levels deep
   (`flow_engine.run_flow`'s `call_stack`/`MAX_CALL_DEPTH`)
+- **MCP** — a node that calls a tool on any external MCP (Model Context
+  Protocol) server, the same kind of server Claude Desktop or Claude.ai
+  connects to. "List tools" on the config panel discovers what a server
+  offers and shows each tool's schema, so an LLM node just before it can
+  be prompted to produce arguments in the right shape; a tool that only
+  takes one plain argument works with un-structured text input too, no
+  JSON required. Hand-rolled JSON-RPC client (`mcp_client.py`), not the
+  official SDK - same reasoning as every other integration in this
+  codebase
 - **Telegram triggers** — wire a flow to a bot (the "Telegram" button in
   the flow editor) and it answers messages automatically: a background job
   checks every few seconds, runs the flow with the same conversation memory
@@ -172,6 +181,8 @@ python3 tests/test_telegram_migration.py   # A pre-upgrade single-bot connection
 python3 tests/test_telegram_triggers.py   # Message a bot, get an auto-reply with real memory - zero /run calls
 python3 tests/test_flow_publishing.py   # A published flow is callable with zero session - just an API key
 python3 tests/test_call_flow.py   # One flow calling another - cycle detection, depth limit, access control
+python3 tests/test_mcp_client.py   # The MCP client against both response transports servers actually use
+python3 tests/test_mcp_node.py   # An MCP node working end to end inside a real flow
 python3 tests/test_calendar.py   # Calendar via the service account, listing/creating events, and using both from a flow
 python3 tests/test_sheets.py   # The upsert behavior a real progress tracker needs, via the service account
 python3 tests/test_service_account_impersonation.py   # The full SIRIM scenario - real JWT, signature independently verified
@@ -567,6 +578,30 @@ is that someone learning the system can see exactly what happened at each
 node, not just a final answer.
 
 ## Design notes / why it's built this way
+
+- **The MCP client handles both response shapes real servers use, and
+  re-initializes on every call rather than caching a session.** MCP's
+  "Streamable HTTP" transport lets a server reply to the same kind of
+  request with either a plain JSON body or a Server-Sent-Events stream -
+  `mcp_client.py` handles both, verified against a mock of each in
+  `test_mcp_client.py` rather than assumed from reading the spec. Re-running
+  the `initialize` handshake on every `list_tools`/`call_tool` (instead of
+  keeping a session alive across calls) costs an extra round trip per
+  call, in exchange for not having to track session expiry or handle a
+  stale session failing mid-flow - the same "simple over clever, revisit
+  if profiling says otherwise" trade this codebase already makes for
+  Google OAuth tokens and LLM provider credentials.
+- **An MCP node's input can be plain text, not just JSON.** Real tools
+  vary a lot in how many arguments they take - a tool with a single
+  string parameter is common enough that requiring an upstream LLM node
+  to always produce a JSON object would be needless ceremony for the
+  simple case. If the node's input parses as a JSON object, that becomes
+  the tool's arguments directly; otherwise the raw text is wrapped as
+  `{"input": <text>}`, which happens to match a very common single-argument
+  tool shape. Getting a tool with a genuinely different single-argument
+  name would still need an upstream LLM node producing real JSON - the
+  fallback is a convenience for the common case, not a way to avoid
+  reading a tool's actual schema.
 
 - **Call Flow (one flow invoking another) needed two independent safety
   nets, not one.** Cycle detection (`call_stack`, a frozenset of every
