@@ -1,4 +1,12 @@
-# Deploying to a Raspberry Pi 5
+# Preparing an Agent Hub device (internal / manufacturing)
+
+**This is not a customer-facing document.** It's for whoever images a new
+SSD before a device ships — customers receive their Agent Hub with all of
+this already done, and should be pointed at
+[`../GETTING_STARTED.md`](../GETTING_STARTED.md) instead, which starts
+from "plug it in" with nothing here assumed. If you're setting up your
+own device from scratch (not preparing one to ship), this is still the
+right doc — the distinction is about audience, not correctness.
 
 This assumes an 8GB Pi 5, booting off an NVMe SSD or a good USB SSD rather
 than a bare SD card - the vector index, logs, and uploaded documents will
@@ -201,16 +209,6 @@ cd agent-hub
      This is a router setting, not something fixable on the Pi - check
      your router's admin page, or try both devices on a different network
      to confirm this is the cause.
-  5. **Running on Windows instead of the Pi** (`windows-run.ps1`)? The
-     very first time it starts listening on a network port, Windows
-     commonly shows a "Windows Defender Firewall has blocked some
-     features of this app" popup - if you (or whoever's used that laptop)
-     ever dismissed it, or only checked "Private networks", other devices
-     on the same Wi-Fi are silently blocked even though `localhost:8811`
-     still works fine on that laptop itself. Windows Settings → Update &
-     Security → Windows Security → Firewall & network protection →
-     "Allow an app through firewall" → find Python/uvicorn → check both
-     Private and Public.
 - **Can't reach `agenthub.local` specifically, but the IP works fine**:
   some routers or isolated Wi-Fi networks block mDNS (the `.local` name
   resolution) specifically, even with client isolation off - just use the

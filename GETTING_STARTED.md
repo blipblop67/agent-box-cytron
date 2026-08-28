@@ -1,17 +1,15 @@
 # Agent Hub — Getting Started, A to Z
 
-This is the complete path from "nothing installed" to "a working team of AI
-agents on your own hardware." It assumes no prior familiarity with the
-project. If you just want a quick reference after you're up and running,
-the three README files (`README.md`, `backend/README.md`, `deploy/README.md`)
-are more compact — this guide is the long version, meant to be read once,
-start to finish, the first time you set the hub up.
+This is the complete path from "just took it out of the box" to "a
+working team of AI agents on your own hardware." It assumes no prior
+familiarity with the project — there's nothing to install, so this
+starts from the first time you power it on.
 
 ## Table of contents
 
 1. [What Agent Hub actually is](#1-what-agent-hub-actually-is)
 2. [What you'll need](#2-what-youll-need)
-3. [Installing it](#3-installing-it)
+3. [Powering it on](#3-powering-it-on)
 4. [Your first login](#4-your-first-login)
 5. [Hub-wide setup (Settings page)](#5-hub-wide-setup-settings-page)
 6. [Understanding flows](#6-understanding-flows)
@@ -50,10 +48,9 @@ choose to connect (your LLM provider, Google, Telegram, etc.).
 
 ## 2. What you'll need
 
-**Hardware** — a Raspberry Pi 5 (4GB+ RAM recommended) is the intended
-target, running Raspberry Pi OS. A Windows machine works too, for
-development or a smaller-scale personal setup — see
-[`deploy/windows-run.ps1`](deploy/windows-run.ps1).
+**Hardware** — your Agent Hub arrives on a Raspberry Pi 5 with everything
+already set up. No hardware shopping list here — if you're reading this,
+you already have what you need.
 
 **An LLM provider** — pick one:
 - [OpenRouter](https://openrouter.ai) — a hosted API in front of dozens of
@@ -81,54 +78,29 @@ None of the optional items block you from getting started — the hub runs
 fine with just an LLM provider connected, and everything else can be added
 later exactly when you need it.
 
-## 3. Installing it
+## 3. Powering it on
 
-### On a Raspberry Pi (the intended path)
+There's nothing to install. Your Agent Hub arrives with everything
+already set up on it — the first time you power it on is the first time
+it runs.
 
-```bash
-git clone <your-repo-url> agent-hub   # or copy the project folder over some other way
-cd agent-hub
-chmod +x deploy/install.sh
-./deploy/install.sh
-```
-
-This one script does everything: installs Node if it's missing, builds the
-frontend, creates a Python virtual environment, installs the backend's
-dependencies, installs a systemd service, and starts it. It's safe to
-re-run any time — re-running after pulling new code is exactly how you
-update by hand (though see [Section 14](#14-keeping-the-hub-healthy) for
-the in-browser way).
-
-When it finishes, it prints the address to open — normally:
+1. Connect it to your router with an Ethernet cable, and plug in power.
+2. Wait about a minute for it to finish starting up (the first boot after
+   power is off can take a little longer than normal).
+3. From any laptop, phone, or tablet on the same network, open a browser
+   and go to:
 
 ```
 http://agenthub.local:8811
 ```
 
-If `.local` name resolution doesn't work on your network (some routers or
-"isolated" Wi-Fi networks block this), use the Pi's IP address directly:
-`hostname -I` on the Pi shows it, then browse to `http://<that-ip>:8811`.
+That's the whole setup. If that address doesn't load, see
+[Section 15](#15-if-something-goes-wrong) — it's almost always one small
+network thing, not anything wrong with the device itself.
 
-The service is registered with systemd and set to `Restart=always`, so it
-comes back up automatically after a reboot or crash. Useful commands:
-
-```bash
-sudo systemctl status agent-hub     # is it running?
-sudo systemctl restart agent-hub    # restart it
-journalctl -u agent-hub -n 50       # see recent logs
-```
-
-### On Windows (development / smaller personal setup)
-
-```powershell
-cd agent-hub
-.\deploy\windows-run.ps1
-```
-
-This installs dependencies and starts the server in the foreground (close
-the window or press Ctrl+C to stop it — there's no background service on
-this path). It prints both `http://localhost:8811` for this machine and
-the LAN IP other devices on the same Wi-Fi can use to reach it.
+It keeps running on its own from here — if it's ever unplugged or your
+power goes out, it starts itself back up automatically the next time it
+gets power, exactly where it left off. Nothing to restart or reconfigure.
 
 **One thing worth knowing**: the first time it starts listening on a
 network port, Windows may show a "Windows Defender Firewall has blocked
@@ -534,10 +506,11 @@ flows, knowledge bases, or accounts.
 
 ### Backups
 
-Everything that matters is one folder: `~/.agent-hub` (or wherever
-`AGENT_HUB_DATA_DIR` points). Back that up and you've backed up every
-flow, account, uploaded document, and connection. The code itself is
-disposable — it's just whatever's in the git repo.
+Everything your hub knows — every flow, account, uploaded document, and
+connection — lives in one place on the device itself. There's no
+customer-facing "download a backup" button in the app yet, so if you want
+one taken, that's a support request rather than something to do yourself
+through the browser.
 
 ### Password recovery — three tiers
 
@@ -547,34 +520,32 @@ disposable — it's just whatever's in the git repo.
 2. **An admin resets it** — Team page, works regardless of whether SMTP
    or a recovery email is set up.
 3. **The only admin is locked out, with no recovery email and no SMTP
-   configured** — from a terminal on the machine the hub runs on:
-   ```bash
-   cd agent-hub/backend
-   python3 reset_password.py
-   ```
-   Lists every account, asks which one, asks for a new password twice,
-   sets it exactly the way a normal reset would. This is a local-shell
-   tool on purpose, not a web endpoint — anyone who can run it already has
-   full access to the database file itself.
+   configured** — this needs direct access to the device itself, which
+   isn't something to attempt casually. Reach out to support with your
+   hub's name — this is exactly the situation support access exists for.
 
 ## 15. If something goes wrong
 
-**Can't reach the hub from another device on the same Wi-Fi, even by IP
-address:**
-1. Confirm it's running: `sudo systemctl status agent-hub` on the Pi.
-2. Confirm the IP hasn't changed: `hostname -I` on the Pi (DHCP can hand
-   out a new one after a reboot if it's not reserved/static).
-3. Check for a Pi-side firewall: `sudo ufw status` — if active and 8811
-   isn't allowed, `sudo ufw allow 8811`.
-4. Router/Wi-Fi client isolation — some routers (especially guest
-   networks) block devices on the same Wi-Fi from reaching each other
-   entirely. A router setting, not fixable from the Pi.
-5. On Windows specifically: check Windows Defender Firewall → "Allow an
-   app through firewall" → make sure Python/uvicorn is checked for both
-   Private and Public networks.
-
-**`agenthub.local` doesn't resolve, but the IP address works fine:** some
-networks block mDNS specifically — just use the IP going forward.
+**`agenthub.local` doesn't load at all:**
+1. Check the physical basics first — is it plugged into power, and is the
+   Ethernet cable connected to your router on both ends? Most connection
+   issues are one of these two.
+2. Give it a full minute after powering on — the first boot after being
+   unplugged takes a bit longer than waking from sleep.
+3. Make sure the device you're browsing from is on the **same network** —
+   a phone on cellular data instead of your home Wi-Fi won't be able to
+   reach it, for instance.
+4. Some networks (especially "guest" Wi-Fi, or certain routers) block the
+   `.local` address style entirely. Try finding its actual address
+   instead: open your router's admin page (often something like
+   `192.168.1.1` in a browser — check the sticker on the router itself,
+   or your ISP's app) and look for a connected device named `agenthub` in
+   its list of devices — use the IP address shown there instead, e.g.
+   `http://192.168.1.42:8811`.
+5. If none of that gets you in, try power-cycling it — unplug for 10
+   seconds, plug back in, wait a minute.
+6. Still nothing? That's a support question, not something to keep
+   troubleshooting alone — reach out with what you've already tried.
 
 **"Not configured yet" on a Google node even after saving a service
 account key:** double check the entire JSON file was pasted (not just
@@ -603,8 +574,9 @@ checking from your network) — wait a bit and try again.
 
 **A Knowledge base upload sits at "processing" forever:** the local
 embedding model downloads on its first real use (roughly 130MB) — it
-needs internet the first time, then works offline. Check the logs
-(`journalctl -u agent-hub`) to see if that download is stuck.
+needs internet the first time, then works offline. If it's stuck well
+past what a normal download should take, that's worth a support message
+rather than waiting indefinitely.
 
 **A flow fails immediately with a clear error naming a specific node:**
 that's intentional — every node validates its own configuration and
