@@ -116,6 +116,19 @@ Drive tool integrations. Pairs with the React frontend in
   JSON required. Hand-rolled JSON-RPC client (`mcp_client.py`), not the
   official SDK - same reasoning as every other integration in this
   codebase
+- **Publishing a flow also makes it an MCP server** - the same API key
+  that unlocks the plain REST publish endpoint also works as a Bearer
+  token against `/api/public/flows/{id}/mcp`, a real JSON-RPC 2.0
+  endpoint (`initialize`, `notifications/initialized`, `tools/list`,
+  `tools/call`) exposing exactly one tool, `run_flow`. Not a separate
+  feature to opt into - publish once, reachable both ways. This is what
+  makes the MCP node capable of reaching another Agent Hub flow, not just
+  third-party servers: point one at another flow's own published MCP URL
+  and it's indistinguishable from any other MCP tool call. Verified with
+  a genuine end-to-end proof, not just a mocked one - `mcp_client.py`
+  calling a real, independently running Agent Hub server process over an
+  actual network connection, confirmed correct on both the list and call
+  paths
 - **Telegram triggers** — wire a flow to a bot (the "Telegram" button in
   the flow editor) and it answers messages automatically: a background job
   checks every few seconds, runs the flow with the same conversation memory
@@ -183,6 +196,7 @@ python3 tests/test_flow_publishing.py   # A published flow is callable with zero
 python3 tests/test_call_flow.py   # One flow calling another - cycle detection, depth limit, access control
 python3 tests/test_mcp_client.py   # The MCP client against both response transports servers actually use
 python3 tests/test_mcp_node.py   # An MCP node working end to end inside a real flow
+python3 tests/test_mcp_server.py   # A published flow's MCP endpoint - full JSON-RPC handshake, auth, errors
 python3 tests/test_calendar.py   # Calendar via the service account, listing/creating events, and using both from a flow
 python3 tests/test_sheets.py   # The upsert behavior a real progress tracker needs, via the service account
 python3 tests/test_service_account_impersonation.py   # The full SIRIM scenario - real JWT, signature independently verified

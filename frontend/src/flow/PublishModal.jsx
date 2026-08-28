@@ -11,6 +11,7 @@ export default function PublishModal({ onClose }) {
   const setFlowMeta = useFlowEditorStore((s) => s.setFlowMeta)
   const [apiKey, setApiKey] = useState(null)
   const [runUrl, setRunUrl] = useState(null)
+  const [mcpUrl, setMcpUrl] = useState(null)
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -20,6 +21,7 @@ export default function PublishModal({ onClose }) {
       const result = await api.post(`/flows/${flowId}/publish`, {})
       setApiKey(result.api_key)
       setRunUrl(result.run_url)
+      setMcpUrl(result.mcp_url)
       setFlowMeta({ published: true })
     } finally {
       setBusy(false)
@@ -73,6 +75,22 @@ export default function PublishModal({ onClose }) {
             <div>
               <p className="text-xs font-medium text-ink-muted">Example</p>
               <pre className="mt-1.5 overflow-x-auto rounded-md border border-line-strong bg-bg p-3 font-mono text-[11px] leading-relaxed text-ink-muted">{curlExample}</pre>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-ink-muted">
+                Also reachable as an MCP server - same key, same flow
+              </p>
+              <p className="mt-1 text-[11px] text-ink-faint">
+                Any MCP client (Claude Desktop, Claude.ai, or another Agent Hub flow's MCP node) can
+                call this flow as a tool named <code className="text-ink">run_flow</code>. Server URL
+                below, this same API key as the Bearer token.
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1.5 font-mono text-xs text-ink">{origin}{mcpUrl}</code>
+                <button onClick={() => handleCopy(`${origin}${mcpUrl}`)} className="shrink-0 rounded p-1.5 text-ink-faint hover:bg-surface hover:text-copper" title="Copy">
+                  <Copy size={14} />
+                </button>
+              </div>
             </div>
             <p className="text-xs text-ink-faint">
               Publishing again generates a new key and immediately invalidates this one.

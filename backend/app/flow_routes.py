@@ -104,7 +104,11 @@ def publish_flow(flow_id: str, user: dict = Depends(get_current_user)):
     _require_flow_owner(flow_id, user)
     api_key = security.new_api_key()
     db.set_flow_api_key_hash(flow_id, security.hash_api_key(api_key))
-    return FlowPublishResponse(api_key=api_key, run_url=f"/api/public/flows/{flow_id}/run")
+    return FlowPublishResponse(
+        api_key=api_key,
+        run_url=f"/api/public/flows/{flow_id}/run",
+        mcp_url=f"/api/public/flows/{flow_id}/mcp",
+    )
 
 
 @router.delete("/{flow_id}/publish")

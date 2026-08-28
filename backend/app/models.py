@@ -152,6 +152,7 @@ class FlowRunResponse(BaseModel):
 class FlowPublishResponse(BaseModel):
     api_key: str
     run_url: str
+    mcp_url: str
 
 
 class SettingsOut(BaseModel):

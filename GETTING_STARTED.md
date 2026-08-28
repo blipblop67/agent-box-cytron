@@ -276,7 +276,7 @@ a different situation:
 | **Chat** | "Chat" button in the flow editor toolbar | Talking to it like a normal assistant — remembers the conversation, back-and-forth |
 | **Schedule** | "Schedule" button | Runs on its own on an interval or daily at a set time — no one has to be there |
 | **Telegram trigger** | "Telegram" button | Message a connected bot from your phone and get an automatic reply — checked every few seconds in the background, same conversation memory as Chat |
-| **Publish** | "Publish" button | Generates an API key so an external website or script can call this one flow with `X-API-Key`, no login |
+| **Publish** | "Publish" button | Generates an API key so an external website, script, or MCP client can call this one flow — as a plain REST endpoint (`X-API-Key`), or as an MCP server (same key, as a Bearer token) |
 
 **Chat and Telegram triggers share the same underlying memory system** —
 a conversation started one way can be viewed from the other (the Telegram
@@ -413,6 +413,16 @@ that tool's expected arguments — the config panel shows the exact schema
 once you've picked a tool, so an LLM node just before it can be prompted
 to produce the right shape. A tool that only takes one plain argument
 doesn't need JSON at all — plain text gets wrapped automatically.
+
+**Publishing a flow also makes it an MCP server, automatically — no
+separate step.** Click Publish, and alongside the usual REST curl
+example, the same modal shows an MCP server URL using the same API key.
+Any MCP client can call it — including this hub's own MCP node, pointed
+at another flow's published MCP URL, which is the second way "one agent
+uses another" can work here: Call Flow for same-hub composition (no
+network, no key needed), MCP for reaching a flow published from anywhere
+— this hub or a different one — the same way any external MCP tool would
+be reached.
 
 ## 11. Template tour
 
