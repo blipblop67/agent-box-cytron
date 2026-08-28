@@ -3,7 +3,11 @@ import { NODE_REGISTRY, CATEGORY_CLASSES } from './nodeRegistry'
 import { useFlowEditorStore } from '../state/flowEditorStore'
 import { useCatalogStore } from '../state/catalogStore'
 
-function subtitleFor(type, data, knowledgeBases, telegramBots) {
+function subtitleFor(type, data, knowledgeBases, telegramBots, serviceAccountConfigured) {
+  const GOOGLE_NODE_TYPES = new Set(['email', 'drive', 'calendar', 'sheets'])
+  if (GOOGLE_NODE_TYPES.has(type) && !serviceAccountConfigured) {
+    return 'Not configured yet - see Settings'
+  }
   switch (type) {
     case 'input':
       return 'Starting point of the run'
@@ -51,6 +55,7 @@ export default function FlowNode({ id, type, data, selected }) {
   const Icon = meta.icon
   const knowledgeBases = useCatalogStore((s) => s.knowledgeBases)
   const telegramBots = useCatalogStore((s) => s.telegramBots)
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
   const runResult = useFlowEditorStore((s) => s.runResult)
   const step = runResult?.trace?.find((t) => t.node_id === id)
   const status = step ? (step.error ? 'error' : 'ok') : null
@@ -73,7 +78,7 @@ export default function FlowNode({ id, type, data, selected }) {
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-ink">{meta.label}</div>
           <div className="mt-0.5 truncate font-mono text-[11px] text-ink-muted">
-            {subtitleFor(type, data, knowledgeBases, telegramBots)}
+            {subtitleFor(type, data, knowledgeBases, telegramBots, serviceAccountConfigured)}
           </div>
         </div>
       </div>
