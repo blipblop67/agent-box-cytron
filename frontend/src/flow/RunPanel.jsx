@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ChevronUp, ChevronDown, Play, CircleCheck, CircleX, Loader2 } from 'lucide-react'
 import { useFlowEditorStore } from '../state/flowEditorStore'
 import { NODE_REGISTRY } from './nodeRegistry'
@@ -73,6 +74,14 @@ export default function RunPanel({ open, onToggle }) {
             {runError && (
               <div className="rounded-md border border-danger/30 bg-danger-dim px-3 py-2 text-xs text-danger">
                 {runError}
+                {runError.includes("API key configured") && (
+                  <>
+                    {" "}
+                    <Link to="/settings" className="underline hover:text-danger/80">Settings</Link>
+                    {" or "}
+                    <Link to="/account" className="underline hover:text-danger/80">Account</Link>
+                  </>
+                )}
               </div>
             )}
             {!runError && !runResult && !running && (

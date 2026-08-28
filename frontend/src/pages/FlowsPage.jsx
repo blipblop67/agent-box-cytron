@@ -14,6 +14,7 @@ export default function FlowsPage() {
   const [flows, setFlows] = useState(null)
   const [templates, setTemplates] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [needsLlmSetup, setNeedsLlmSetup] = useState(false)
   const navigate = useNavigate()
   const user = useUserStore((s) => s.user)
 
@@ -24,6 +25,11 @@ export default function FlowsPage() {
   useEffect(() => {
     refresh()
     api.get('/templates').then(setTemplates)
+    Promise.all([api.get('/settings'), api.get('/account/settings')]).then(([hub, personal]) => {
+      const hubReady = hub.llm_provider === 'ollama' ? Boolean(hub.ollama_model) : hub.openrouter_key_configured
+      const personalReady = personal.openrouter_key_configured
+      setNeedsLlmSetup(!hubReady && !personalReady)
+    })
   }, [])
 
   async function handleDelete(e, id) {
@@ -49,6 +55,22 @@ export default function FlowsPage() {
           <Plus size={15} /> New flow
         </Button>
       </div>
+
+      {needsLlmSetup && (
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-copper/30 bg-copper-dim px-5 py-4">
+          <div>
+            <p className="text-sm font-medium text-copper-bright">Connect an AI model before your first run</p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              {user.role === 'admin'
+                ? "Every flow needs one to actually think - takes about a minute in Settings, free tier available."
+                : "Every flow needs one to actually think - ask a hub admin to set one up, or add your own on the Account page."}
+            </p>
+          </div>
+          <Button variant="primary" onClick={() => navigate(user.role === 'admin' ? '/settings' : '/account')}>
+            {user.role === 'admin' ? 'Go to Settings' : 'Go to Account'} <ArrowRight size={13} />
+          </Button>
+        </div>
+      )}
 
       {templates && templates.length > 0 && (
         <div className="mb-8">
