@@ -38,12 +38,36 @@ _EXPORT_MIME_MAP = {
 FIELDS = "id,name,mimeType,modifiedTime,size,webViewLink,parents"
 
 
+class DriveError(Exception):
+    pass
+
+
 def _headers(impersonate: str | None = None) -> dict:
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
-        raise ValueError("Drive isn't configured yet - add a Google service account key on the Settings page")
-    token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
+        raise DriveError("Drive isn't configured yet - add a Google service account key on the Settings page")
+    try:
+        token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
+    except service_account_auth.ServiceAccountError as exc:
+        raise DriveError(str(exc)) from exc
     return {"Authorization": f"Bearer {token}"}
+
+
+def _handle_error(resp: httpx.Response, impersonate: str | None, context: str) -> None:
+    if resp.status_code < 400:
+        return
+    try:
+        detail = resp.json().get("error", {}).get("message", resp.text)
+    except ValueError:
+        detail = resp.text
+    if not impersonate:
+        raise DriveError(
+            f"Drive rejected this ({context}: \"{detail}\"). Acting as the service account's own "
+            f"identity only sees files explicitly shared with its email address - make sure the "
+            f"file/folder is actually shared with it, or set this node's 'Impersonate' field to act "
+            f"as a specific Workspace person instead."
+        )
+    raise DriveError(f"Drive rejected this ({context} as '{impersonate}'): {detail}")
 
 
 def list_files(search: str = "", max_results: int = 20, *, impersonate: str | None = None) -> list[dict]:
@@ -57,7 +81,7 @@ def list_files(search: str = "", max_results: int = 20, *, impersonate: str | No
         params={"q": query, "pageSize": max_results, "fields": f"files({FIELDS})"},
         timeout=30,
     )
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "listing files")
     return resp.json().get("files", [])
 
 
@@ -68,7 +92,7 @@ def get_file_metadata(file_id: str, *, impersonate: str | None = None) -> dict:
         params={"fields": FIELDS},
         timeout=30,
     )
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "reading file metadata")
     return resp.json()
 
 
@@ -95,7 +119,7 @@ def read_file_content(file_id: str, *, impersonate: str | None = None) -> dict:
             params={"alt": "media"},
             timeout=30,
         )
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "reading file content")
     return {"name": meta["name"], "mime_type": mime_type, "content": resp.text}
 
 
@@ -115,7 +139,7 @@ def create_file(name: str, content: str, mime_type: str = "text/plain",
         params={"fields": FIELDS},
         timeout=30,
     )
-    create_resp.raise_for_status()
+    _handle_error(create_resp, impersonate, "creating a file")
     file_id = create_resp.json()["id"]
 
     return update_file_content(file_id, content, mime_type=mime_type, impersonate=impersonate)
@@ -130,5 +154,5 @@ def update_file_content(file_id: str, content: str, mime_type: str = "text/plain
         content=content.encode(),
         timeout=30,
     )
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "updating file content")
     return resp.json()

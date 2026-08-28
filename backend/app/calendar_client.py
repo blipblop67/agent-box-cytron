@@ -22,12 +22,36 @@ API_BASE = "https://www.googleapis.com/calendar/v3"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
+class CalendarError(Exception):
+    pass
+
+
 def _headers(impersonate: str | None = None) -> dict:
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
-        raise ValueError("Calendar isn't configured yet - add a Google service account key on the Settings page")
-    token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
+        raise CalendarError("Calendar isn't configured yet - add a Google service account key on the Settings page")
+    try:
+        token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
+    except service_account_auth.ServiceAccountError as exc:
+        raise CalendarError(str(exc)) from exc
     return {"Authorization": f"Bearer {token}"}
+
+
+def _handle_error(resp: httpx.Response, impersonate: str | None, context: str) -> None:
+    if resp.status_code < 400:
+        return
+    try:
+        detail = resp.json().get("error", {}).get("message", resp.text)
+    except ValueError:
+        detail = resp.text
+    if not impersonate:
+        raise CalendarError(
+            f"Calendar rejected this ({context}: \"{detail}\"). The service account's own primary "
+            f"calendar has nothing on it unless a real calendar has been explicitly shared with its "
+            f"email address - set this node's 'Impersonate' field to act as a specific Workspace "
+            f"person instead if that's what you actually want."
+        )
+    raise CalendarError(f"Calendar rejected this ({context} as '{impersonate}'): {detail}")
 
 
 def _now_rfc3339() -> str:
@@ -46,7 +70,7 @@ def list_events(max_results: int = 10, time_min: str | None = None,
         "timeMin": time_min or _now_rfc3339(),
     }
     resp = httpx.get(f"{API_BASE}/calendars/primary/events", headers=_headers(impersonate), params=params, timeout=30)
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "listing events")
     return [_parse_event(e) for e in resp.json().get("items", [])]
 
 
@@ -67,7 +91,7 @@ def create_event(summary: str, start: str, end: str, *,
     if attendees:
         body["attendees"] = [{"email": a} for a in attendees]
     resp = httpx.post(f"{API_BASE}/calendars/primary/events", headers=_headers(impersonate), json=body, timeout=30)
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "creating an event")
     return _parse_event(resp.json())
 
 

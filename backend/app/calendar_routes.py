@@ -13,7 +13,7 @@ account's own calendar.
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import calendar_client, service_account_auth
+from . import calendar_client
 from .auth import get_current_user
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 def list_events(max_results: int = 10, impersonate: str | None = None, user: dict = Depends(get_current_user)):
     try:
         return calendar_client.list_events(max_results=max_results, impersonate=impersonate)
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, calendar_client.CalendarError) as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -46,5 +46,5 @@ def create_event(body: CreateEventRequest, user: dict = Depends(get_current_user
             description=body.description, location=body.location,
             timezone_name=body.timezone_name, attendees=body.attendees, impersonate=body.impersonate,
         )
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, calendar_client.CalendarError) as exc:
         raise HTTPException(400, str(exc))

@@ -12,7 +12,7 @@ left blank, everything happens in the service account's own Drive space.
 """
 from fastapi import APIRouter, Depends, HTTPException
 
-from . import drive_client, service_account_auth
+from . import drive_client
 from .auth import get_current_user
 from .models import DriveFileContent, DriveFileCreate, DriveFileOut, DriveFileUpdate
 
@@ -25,7 +25,7 @@ def list_files(q: str = "", max_results: int = 20, impersonate: str | None = Non
                 user: dict = Depends(get_current_user)):
     try:
         return drive_client.list_files(search=q, max_results=max_results, impersonate=impersonate)
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, drive_client.DriveError) as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -33,7 +33,7 @@ def list_files(q: str = "", max_results: int = 20, impersonate: str | None = Non
 def get_file(file_id: str, impersonate: str | None = None, user: dict = Depends(get_current_user)):
     try:
         return drive_client.get_file_metadata(file_id, impersonate=impersonate)
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, drive_client.DriveError) as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -41,7 +41,7 @@ def get_file(file_id: str, impersonate: str | None = None, user: dict = Depends(
 def read_file(file_id: str, impersonate: str | None = None, user: dict = Depends(get_current_user)):
     try:
         return drive_client.read_file_content(file_id, impersonate=impersonate)
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, drive_client.DriveError) as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -52,7 +52,7 @@ def create_file(body: DriveFileCreate, user: dict = Depends(get_current_user)):
             name=body.name, content=body.content, mime_type=body.mime_type,
             folder_id=body.folder_id, impersonate=body.impersonate,
         )
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, drive_client.DriveError) as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -60,5 +60,5 @@ def create_file(body: DriveFileCreate, user: dict = Depends(get_current_user)):
 def update_file(file_id: str, body: DriveFileUpdate, user: dict = Depends(get_current_user)):
     try:
         return drive_client.update_file_content(file_id, body.content, mime_type=body.mime_type, impersonate=body.impersonate)
-    except (ValueError, service_account_auth.ServiceAccountError) as exc:
+    except (ValueError, drive_client.DriveError) as exc:
         raise HTTPException(400, str(exc))

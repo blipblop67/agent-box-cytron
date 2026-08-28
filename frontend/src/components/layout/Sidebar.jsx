@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Workflow, Database, Plug, Users, Settings, UserCircle, LogOut } from 'lucide-react'
 import Logo from './Logo'
 import Badge from '../common/Badge'
+import { api } from '../../lib/api'
 import { useUserStore } from '../../state/userStore'
 
 const NAV = [
@@ -16,14 +18,22 @@ const NAV = [
 export default function Sidebar() {
   const user = useUserStore((s) => s.user)
   const logout = useUserStore((s) => s.logout)
+  const [hubName, setHubName] = useState('')
+
+  useEffect(() => {
+    api.get('/settings').then((s) => {
+      setHubName(s.hub_name || '')
+      document.title = s.hub_name ? `${s.hub_name} — Agent Hub` : 'Agent Hub'
+    })
+  }, [])
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-2 px-4 py-4">
         <Logo />
-        <div>
-          <div className="text-sm font-semibold tracking-tight text-ink">Agent Hub</div>
-          <div className="font-mono text-[10px] text-ink-faint">local hub</div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold tracking-tight text-ink">Agent Hub</div>
+          <div className="truncate font-mono text-[10px] text-ink-faint">{hubName || 'local hub'}</div>
         </div>
       </div>
 

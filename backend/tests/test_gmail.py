@@ -145,6 +145,32 @@ def main():
     assert reply["threadId"] == "thread-abc"
     print("[ok] replied on the same thread")
 
+    # --- THE BUG FIX: a real Gmail API failure (not a token-minting failure)
+    # used to bubble up as a raw, unformatted httpx exception - now it's a clean
+    # GmailError, with a specific hint when there's no impersonate set, since
+    # that's overwhelmingly the actual cause (a plain service account has no
+    # real inbox of its own) ---
+    class FakeErrorResponse:
+        def __init__(self, json_data, status_code):
+            self._json = json_data
+            self.status_code = status_code
+            self.text = str(json_data)
+
+        def json(self):
+            return self._json
+
+    def fake_get_400(url, headers=None, params=None, **kwargs):
+        return FakeErrorResponse({"error": {"message": "Bad Request"}}, 400)
+
+    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get_400):
+        no_impersonate_result = client.get("/api/email/messages", headers=headers, params={"max_results": 5})
+    assert no_impersonate_result.status_code == 400
+    error_text = no_impersonate_result.json()["detail"]
+    assert "Bad Request" in error_text  # the real Google error text is preserved, not swallowed
+    assert "no real" in error_text.lower() and "impersonate" in error_text.lower()  # and the specific hint is there
+    assert "Client error" not in error_text  # this is httpx's own raw exception prefix - must NOT appear
+    print(f"[ok] a self-auth Gmail failure gives a clean, specific error, not a raw httpx exception: {error_text!r}")
+
     print("\nAll Gmail smoke tests passed.")
 
 

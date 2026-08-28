@@ -13,7 +13,7 @@ practice, since a plain service account has no inbox of its own.
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import gmail_client, service_account_auth
+from . import gmail_client
 from .auth import get_current_user
 
 router = APIRouter(prefix="/email", tags=["email"])
@@ -30,7 +30,7 @@ class SendEmailRequest(BaseModel):
 def send(body: SendEmailRequest, user: dict = Depends(get_current_user)):
     try:
         return gmail_client.send_email(to=body.to, subject=body.subject, body=body.body, impersonate=body.impersonate)
-    except service_account_auth.ServiceAccountError as exc:
+    except gmail_client.GmailError as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -39,7 +39,7 @@ def list_messages(q: str = "", max_results: int = 10, impersonate: str | None = 
                    user: dict = Depends(get_current_user)):
     try:
         return gmail_client.list_messages(query=q, max_results=max_results, impersonate=impersonate)
-    except service_account_auth.ServiceAccountError as exc:
+    except gmail_client.GmailError as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -47,7 +47,7 @@ def list_messages(q: str = "", max_results: int = 10, impersonate: str | None = 
 def get_message(message_id: str, impersonate: str | None = None, user: dict = Depends(get_current_user)):
     try:
         return gmail_client.get_message(message_id, impersonate=impersonate)
-    except service_account_auth.ServiceAccountError as exc:
+    except gmail_client.GmailError as exc:
         raise HTTPException(400, str(exc))
 
 
@@ -60,5 +60,5 @@ class ReplyRequest(BaseModel):
 def reply(message_id: str, body: ReplyRequest, user: dict = Depends(get_current_user)):
     try:
         return gmail_client.reply_to_message(message_id, body.body, impersonate=body.impersonate)
-    except service_account_auth.ServiceAccountError as exc:
+    except gmail_client.GmailError as exc:
         raise HTTPException(400, str(exc))

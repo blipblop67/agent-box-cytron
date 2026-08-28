@@ -195,78 +195,87 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
 def _execute_email_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
     impersonate = data.get("impersonate") or None
     action = data.get("action", "send")
-    if action == "send":
-        to = data.get("to")
-        if not to:
-            raise ValueError("This Email node has no recipient configured")
-        subject = data.get("subject") or "(no subject)"
-        body = node_input or data.get("body") or run_input
-        result = gmail_client.send_email(to=to, subject=subject, body=body, impersonate=impersonate)
-        return f"Sent to {to} (message id: {result.get('id')})"
-    if action == "search":
-        query = data.get("query") or node_input or run_input
-        messages = gmail_client.list_messages(
-            query=query, max_results=data.get("max_results") or 5, impersonate=impersonate,
-        )
-        if not messages:
-            return "(no matching emails found)"
-        return "\n\n".join(f"From {m['from']} - {m['subject']}\n{m['snippet']}" for m in messages)
+    try:
+        if action == "send":
+            to = data.get("to")
+            if not to:
+                raise ValueError("This Email node has no recipient configured")
+            subject = data.get("subject") or "(no subject)"
+            body = node_input or data.get("body") or run_input
+            result = gmail_client.send_email(to=to, subject=subject, body=body, impersonate=impersonate)
+            return f"Sent to {to} (message id: {result.get('id')})"
+        if action == "search":
+            query = data.get("query") or node_input or run_input
+            messages = gmail_client.list_messages(
+                query=query, max_results=data.get("max_results") or 5, impersonate=impersonate,
+            )
+            if not messages:
+                return "(no matching emails found)"
+            return "\n\n".join(f"From {m['from']} - {m['subject']}\n{m['snippet']}" for m in messages)
+    except gmail_client.GmailError as exc:
+        raise ValueError(str(exc)) from exc
     raise ValueError(f"Unknown email action '{action}'")
 
 
 def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
     impersonate = data.get("impersonate") or None
     action = data.get("action", "list")
-    if action == "list":
-        search = data.get("search") or node_input or run_input
-        files = drive_client.list_files(search=search, max_results=data.get("max_results") or 10, impersonate=impersonate)
-        if not files:
-            return "(no matching files found)"
-        return "\n".join(f"{f['name']} ({f['mimeType']}) - id: {f['id']}" for f in files)
-    if action == "read":
-        file_id = data.get("file_id")
-        if not file_id:
-            raise ValueError("This Drive node has no file selected to read")
-        result = drive_client.read_file_content(file_id, impersonate=impersonate)
-        return result["content"]
-    if action == "create":
-        name = data.get("name") or "agent-output.txt"
-        content = node_input or data.get("content") or run_input
-        result = drive_client.create_file(name=name, content=content,
-                                           mime_type=data.get("mime_type") or "text/plain", impersonate=impersonate)
-        return f"Created '{result['name']}' (id: {result['id']})"
+    try:
+        if action == "list":
+            search = data.get("search") or node_input or run_input
+            files = drive_client.list_files(search=search, max_results=data.get("max_results") or 10, impersonate=impersonate)
+            if not files:
+                return "(no matching files found)"
+            return "\n".join(f"{f['name']} ({f['mimeType']}) - id: {f['id']}" for f in files)
+        if action == "read":
+            file_id = data.get("file_id")
+            if not file_id:
+                raise ValueError("This Drive node has no file selected to read")
+            result = drive_client.read_file_content(file_id, impersonate=impersonate)
+            return result["content"]
+        if action == "create":
+            name = data.get("name") or "agent-output.txt"
+            content = node_input or data.get("content") or run_input
+            result = drive_client.create_file(name=name, content=content,
+                                               mime_type=data.get("mime_type") or "text/plain", impersonate=impersonate)
+            return f"Created '{result['name']}' (id: {result['id']})"
+    except drive_client.DriveError as exc:
+        raise ValueError(str(exc)) from exc
     raise ValueError(f"Unknown drive action '{action}'")
 
 
 def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
     impersonate = data.get("impersonate") or None
     action = data.get("action", "list")
-    if action == "list":
-        events = calendar_client.list_events(max_results=data.get("max_results") or 10, impersonate=impersonate)
-        if not events:
-            return "(no upcoming events found)"
-        lines = []
-        for e in events:
-            line = f"{e['summary']} - {e['start']}"
-            if e.get("location"):
-                line += f" @ {e['location']}"
-            lines.append(line)
-        return "\n".join(lines)
-    if action == "create":
-        summary = data.get("summary")
-        start = data.get("start")
-        end = data.get("end")
-        if not summary or not start or not end:
-            raise ValueError("This Calendar node needs a title, start time, and end time configured")
-        description = data.get("description") or node_input or run_input
-        attendees_raw = data.get("attendees") or ""
-        attendees = [a.strip() for a in attendees_raw.split(",") if a.strip()] or None
-        result = calendar_client.create_event(
-            summary=summary, start=start, end=end,
-            description=description, location=data.get("location") or "",
-            timezone_name=data.get("timezone_name") or "UTC", attendees=attendees, impersonate=impersonate,
-        )
-        return f"Created '{result['summary']}' ({result['start']} - {result['end']})"
+    try:
+        if action == "list":
+            events = calendar_client.list_events(max_results=data.get("max_results") or 10, impersonate=impersonate)
+            if not events:
+                return "(no upcoming events found)"
+            lines = []
+            for e in events:
+                line = f"{e['summary']} - {e['start']}"
+                if e.get("location"):
+                    line += f" @ {e['location']}"
+                lines.append(line)
+            return "\n".join(lines)
+        if action == "create":
+            summary = data.get("summary")
+            start = data.get("start")
+            end = data.get("end")
+            if not summary or not start or not end:
+                raise ValueError("This Calendar node needs a title, start time, and end time configured")
+            description = data.get("description") or node_input or run_input
+            attendees_raw = data.get("attendees") or ""
+            attendees = [a.strip() for a in attendees_raw.split(",") if a.strip()] or None
+            result = calendar_client.create_event(
+                summary=summary, start=start, end=end,
+                description=description, location=data.get("location") or "",
+                timezone_name=data.get("timezone_name") or "UTC", attendees=attendees, impersonate=impersonate,
+            )
+            return f"Created '{result['summary']}' ({result['start']} - {result['end']})"
+    except calendar_client.CalendarError as exc:
+        raise ValueError(str(exc)) from exc
     raise ValueError(f"Unknown calendar action '{action}'")
 
 

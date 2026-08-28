@@ -8,9 +8,10 @@ Authenticates entirely through the hub-wide Google service account (see
 service_account_auth.py) - there's no per-user OAuth connection anymore.
 `impersonate` (a Workspace email) is required in practice for Gmail
 specifically: a plain service account has no inbox of its own, so
-leaving it blank will fail with a clear Google error unless a Workspace
-admin has specifically provisioned a mailbox for the service account
-itself, which is unusual.
+leaving it blank will fail unless a Workspace admin has specifically
+provisioned a mailbox for the service account itself, which is unusual -
+_handle_error below turns that specific failure into a clear, actionable
+message rather than a raw HTTP exception.
 """
 import base64
 from email.mime.text import MIMEText
@@ -28,14 +29,35 @@ SCOPES = [
 ]
 
 
+class GmailError(Exception):
+    pass
+
+
 def _headers(impersonate: str | None = None) -> dict:
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
-        raise service_account_auth.ServiceAccountError(
-            "Gmail isn't configured yet - add a Google service account key on the Settings page"
-        )
-    token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
+        raise GmailError("Gmail isn't configured yet - add a Google service account key on the Settings page")
+    try:
+        token = service_account_auth.get_access_token(key_info, SCOPES, impersonate)
+    except service_account_auth.ServiceAccountError as exc:
+        raise GmailError(str(exc)) from exc
     return {"Authorization": f"Bearer {token}"}
+
+
+def _handle_error(resp: httpx.Response, impersonate: str | None, context: str) -> None:
+    if resp.status_code < 400:
+        return
+    try:
+        detail = resp.json().get("error", {}).get("message", resp.text)
+    except ValueError:
+        detail = resp.text
+    if not impersonate:
+        raise GmailError(
+            f"Gmail rejected this ({context}: \"{detail}\"). A plain service account has no real "
+            f"inbox of its own - set this node's 'Impersonate' field to a real Workspace address "
+            f"instead (needs domain-wide delegation authorized for that address's scope first)."
+        )
+    raise GmailError(f"Gmail rejected this ({context} as '{impersonate}'): {detail}")
 
 
 def _b64url_encode(raw_bytes: bytes) -> str:
@@ -63,7 +85,7 @@ def send_email(to: str, subject: str, body: str, *,
         payload["threadId"] = thread_id
 
     resp = httpx.post(f"{API_BASE}/messages/send", headers=_headers(impersonate), json=payload, timeout=30)
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "sending an email")
     return resp.json()
 
 
@@ -74,7 +96,7 @@ def list_messages(query: str = "", max_results: int = 10, *, impersonate: str | 
     if query:
         params["q"] = query
     resp = httpx.get(f"{API_BASE}/messages", headers=_headers(impersonate), params=params, timeout=30)
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "listing messages")
     ids = [m["id"] for m in resp.json().get("messages", [])]
     return [_get_message_metadata(mid, impersonate) for mid in ids]
 
@@ -86,7 +108,7 @@ def _get_message_metadata(message_id: str, impersonate: str | None = None) -> di
         params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"]},
         timeout=30,
     )
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "reading a message")
     return _parse_message(resp.json(), include_body=False)
 
 
@@ -99,7 +121,7 @@ def get_message(message_id: str, *, impersonate: str | None = None) -> dict:
         params={"format": "full"},
         timeout=30,
     )
-    resp.raise_for_status()
+    _handle_error(resp, impersonate, "reading a message")
     return _parse_message(resp.json(), include_body=True)
 
 

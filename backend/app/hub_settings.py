@@ -10,6 +10,7 @@ the same vault used elsewhere in this hub.
 from . import crypto_vault, db, service_account_auth
 
 DEFAULTS = {
+    "hub_name": "",                       # shown in the sidebar/tab title - how someone tells this hub apart from another one
     "llm_provider": "openrouter",         # "openrouter" | "ollama"
     "openrouter_model": "",               # e.g. "anthropic/claude-3.5-haiku" - admin picks
     "ollama_base_url": "http://localhost:11434",
@@ -47,13 +48,15 @@ def get_settings() -> dict:
     return settings
 
 
-def update_settings(*, llm_provider: str | None = None, openrouter_api_key: str | None = None,
+def update_settings(*, hub_name: str | None = None, llm_provider: str | None = None, openrouter_api_key: str | None = None,
                      openrouter_model: str | None = None, ollama_base_url: str | None = None,
                      ollama_model: str | None = None, web_search_api_key: str | None = None,
                      youtube_api_key: str | None = None, smtp_host: str | None = None,
                      smtp_port: str | None = None, smtp_username: str | None = None,
                      smtp_password: str | None = None, smtp_from_address: str | None = None,
                      smtp_use_tls: bool | None = None, google_service_account_key: str | None = None) -> None:
+    if hub_name is not None:
+        db.set_setting("hub_name", hub_name.strip()[:60])  # a short label, not a paragraph
     if llm_provider is not None:
         db.set_setting("llm_provider", llm_provider)
     if openrouter_model is not None:

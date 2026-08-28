@@ -147,6 +147,21 @@ def main():
         assert DOWNLOADS[created["id"]] == "updated content"
         print("[ok] updated the file's content")
 
+    # --- the same bug found and fixed in gmail_client.py: a real Drive API
+    # failure used to bubble up as a raw httpx exception - now it's a clean
+    # DriveError with a specific hint for the self-auth case ---
+    def fake_get_403(url, headers=None, params=None, **kwargs):
+        return FakeResponse({"error": {"message": "The caller does not have permission"}}, status_code=403)
+
+    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get_403):
+        denied = client.get("/api/drive/files", headers=headers)
+    assert denied.status_code == 400
+    error_text = denied.json()["detail"]
+    assert "does not have permission" in error_text
+    assert "shared with it" in error_text.lower() or "impersonate" in error_text.lower()
+    assert "Client error" not in error_text
+    print(f"[ok] a self-auth Drive failure gives a clean, specific error, not a raw httpx exception: {error_text!r}")
+
     print("\nAll Drive smoke tests passed.")
 
 

@@ -156,6 +156,7 @@ class FlowPublishResponse(BaseModel):
 
 
 class SettingsOut(BaseModel):
+    hub_name: str
     llm_provider: str
     openrouter_model: str
     openrouter_key_configured: bool
@@ -175,6 +176,7 @@ class SettingsOut(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    hub_name: str | None = None
     llm_provider: str | None = Field(default=None, pattern="^(openrouter|ollama)$")
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None

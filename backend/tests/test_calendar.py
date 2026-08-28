@@ -40,6 +40,7 @@ class FakeResponse:
     def __init__(self, json_data, status_code=200):
         self._json = json_data
         self.status_code = status_code
+        self.text = str(json_data)
 
     def raise_for_status(self):
         pass
@@ -163,6 +164,21 @@ def main():
     assert broken_result.status_code == 400
     assert "title, start time, and end time" in str(broken_result.json())
     print("[ok] a Calendar create node missing required fields gives a clear error")
+
+    # --- the same bug found and fixed in gmail_client.py: a real Calendar API
+    # failure used to bubble up as a raw httpx exception - now it's a clean
+    # CalendarError with a specific hint for the self-auth case ---
+    def fake_get_404(url, headers=None, params=None, **kwargs):
+        return FakeResponse({"error": {"message": "Not Found"}}, status_code=404)
+
+    with patch("httpx.post", side_effect=fake_post), patch("httpx.get", side_effect=fake_get_404):
+        not_found = client.get("/api/calendar/events", headers=headers)
+    assert not_found.status_code == 400
+    error_text = not_found.json()["detail"]
+    assert "Not Found" in error_text
+    assert "impersonate" in error_text.lower()
+    assert "Client error" not in error_text
+    print(f"[ok] a self-auth Calendar failure gives a clean, specific error, not a raw httpx exception: {error_text!r}")
 
     print("\nAll Calendar smoke tests passed.")
 
