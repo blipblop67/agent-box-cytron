@@ -141,6 +141,69 @@ pastes the resulting token into the Connections page. After sending the new
 bot one message, click "Finish linking" there to connect it. Works
 immediately, nothing to configure on the hub itself.
 
+## 7. Preparing a golden image for mass production
+
+Everything above describes setting up **one** Pi. This section is for
+turning that one prepared Pi into a safe source to **clone** for many
+units - skip it entirely if you're only ever setting up a single device.
+
+**Why this needs its own step, not just "clone the SSD":** a disk clone
+copies everything bit-for-bit, including several things that must be
+unique per physical unit, not shared across a whole production run:
+
+- Agent Hub encrypts every stored secret (API keys, service account keys,
+  SMTP passwords) with a key that's generated once and saved to a file
+  (`vault.key`) the first time it's needed - a completely reasonable
+  design for one device, but if that same key ends up on every cloned
+  unit, then extracting it from *any single* unit in the field
+  decrypts every secret on every unit ever cloned from that image, not
+  just the one it came from.
+- Whatever accounts, flows, and settings exist on this Pi right now -
+  including any real credentials ever typed into Settings while testing
+  - would ship to every customer as-is.
+- Identical SSH host keys and machine IDs across every cloned unit cause
+  host-key warnings and network identification collisions the moment two
+  units are ever reachable from the same place.
+
+None of this needs manual fixing per unit, though - Agent Hub already
+creates its database and encryption key fresh, automatically, the first
+time it starts with no existing data directory (that's exactly how a
+brand-new install already behaves). The same is true of SSH host keys and
+the machine ID at the OS level. The only thing needed is making sure none
+of that state exists yet at the moment of cloning, so each unit's *own*
+first boot is what generates it - not this one Pi's boot, before cloning.
+
+**Run this on the Pi you're about to clone, as the very last step, right
+before pulling the SSD:**
+
+```bash
+./deploy/prepare-golden-image.sh
+```
+
+It asks for a typed confirmation before doing anything (it's destructive
+and can't be undone), then wipes the Agent Hub data directory, removes
+`backend/.env` if one exists, clears this Pi's SSH host keys and machine
+ID, and clears shell history and logs. Full details of exactly what it
+touches and why are in the script itself.
+
+**After it finishes: don't power this specific Pi back on.** A normal
+boot would immediately regenerate a fresh identity for *this* Pi, which
+would then get baked into every clone taken after that - the same
+problem all over again, just one step removed. Pull the SSD and clone it
+with whatever tool you'd normally use.
+
+**One thing the script can't do for you**: give each cloned copy its own
+unique hostname before it ships. Every clone starts out identical, so if
+none of them get a distinct hostname, they'll all try to claim the same
+`agenthub.local` address the moment two are ever on the same network -
+Raspberry Pi Imager's OS customization options can set a hostname per-SSD
+as you write each individual clone, which is the easiest point to do
+this.
+
+Everything else - the database, the encryption key, SSH identity - none
+of it needs touching again after that. Each unit generates its own,
+correctly, the first time it actually powers on for a customer.
+
 ## Confirming it really does start on boot
 
 The install script already checks this for you (the "starts on boot" line
