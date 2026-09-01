@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
+import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db  # noqa: E402
@@ -62,7 +63,10 @@ def fake_post(url, json=None, params=None, headers=None, **kwargs):
         return FakeResponse({
             "spreadsheetId": SPREADSHEET_ID,
             "spreadsheetUrl": f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}",
+            "sheets": [{"properties": {"sheetId": 0, "title": "Sheet1"}}],
         })
+    if url.endswith(":batchUpdate"):
+        return FakeResponse({})  # header formatting - cosmetic, just needs to not error
     if url.endswith(":append"):
         _sheet_rows.append(json["values"][0])
         return FakeResponse({})
@@ -215,6 +219,39 @@ def main():
         client.post("/api/sheets/spreadsheets", headers=headers, json={"title": "My own tracker"})
         _, kwargs = mock_post.call_args_list[0]
     print("[ok] leaving 'impersonate' blank is accepted - acts as the service account's own identity")
+
+    # --- header formatting: a batchUpdate call happens automatically when
+    # headers are given, styling the header row (frozen, bold, branded) ---
+    batch_update_calls = []
+
+    def fake_post_capturing_batch(url, json=None, params=None, headers=None, **kwargs):
+        if url.endswith(":batchUpdate"):
+            batch_update_calls.append(json)
+        return fake_post(url, json=json, params=params, headers=headers, **kwargs)
+
+    with patch("httpx.post", side_effect=fake_post_capturing_batch), patch("httpx.put", side_effect=fake_put):
+        client.post("/api/sheets/spreadsheets", headers=headers, json={
+            "title": "Formatted Tracker", "headers": ["Application ID", "Status", "Notes"],
+        })
+    assert len(batch_update_calls) == 1
+    requests = batch_update_calls[0]["requests"]
+    assert any("updateSheetProperties" in r for r in requests)  # frozen header row
+    assert any("repeatCell" in r for r in requests)  # background + bold white text
+    print("[ok] creating a spreadsheet with headers automatically styles the header row (frozen, branded, bold)")
+
+    # --- formatting is cosmetic only - a failure there shouldn't break the
+    # actual Create action, since a plain unstyled sheet is still a working sheet ---
+    def fake_post_broken_formatting(url, json=None, params=None, headers=None, **kwargs):
+        if url.endswith(":batchUpdate"):
+            raise httpx.ConnectError("formatting request failed")
+        return fake_post(url, json=json, params=params, headers=headers, **kwargs)
+
+    with patch("httpx.post", side_effect=fake_post_broken_formatting), patch("httpx.put", side_effect=fake_put):
+        still_works = client.post("/api/sheets/spreadsheets", headers=headers, json={
+            "title": "Tracker despite broken formatting", "headers": ["A", "B"],
+        })
+    assert still_works.status_code == 200
+    print("[ok] the Create action still succeeds even if the cosmetic formatting call fails")
 
     print("\nAll Sheets smoke tests passed.")
 

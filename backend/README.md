@@ -197,6 +197,7 @@ python3 tests/test_call_flow.py   # One flow calling another - cycle detection, 
 python3 tests/test_mcp_client.py   # The MCP client against both response transports servers actually use
 python3 tests/test_mcp_node.py   # An MCP node working end to end inside a real flow
 python3 tests/test_mcp_server.py   # A published flow's MCP endpoint - full JSON-RPC handshake, auth, errors
+python3 tests/test_sirim_template.py   # The SIRIM template's 9-column schema, end to end through the real graph
 python3 tests/test_calendar.py   # Calendar via the service account, listing/creating events, and using both from a flow
 python3 tests/test_sheets.py   # The upsert behavior a real progress tracker needs, via the service account
 python3 tests/test_service_account_impersonation.py   # The full SIRIM scenario - real JWT, signature independently verified
@@ -592,6 +593,30 @@ is that someone learning the system can see exactly what happened at each
 node, not just a final answer.
 
 ## Design notes / why it's built this way
+
+- **A Google AI Studio sample app of the same SIRIM tracker concept was a
+  genuinely useful reference for *what to track*, not *how to
+  authenticate*.** It used Firebase Auth's popup-based per-user Google
+  sign-in - functionally a variant of the exact per-user OAuth model this
+  codebase moved away from, needing the same real-domain/redirect
+  requirements a `.local` appliance address can't satisfy. What was worth
+  keeping was its data model: a much richer set of tracked fields
+  (certification scheme, officer contact, target deadline,
+  priority-tagged pending actions, certificate number) than the original
+  3-column example. Brought into the existing pipe-delimited convention
+  as a 9-column schema (`templates.py`'s SIRIM template) - no new parsing
+  logic needed, since `_execute_sheets_node` already split on `|` and
+  handled however many fields were there; verified against the *actual,
+  unmodified* template graph end to end in `test_sirim_template.py`
+  rather than just trusting the prompt reads correctly.
+- **A spreadsheet's header row gets styled automatically on creation** -
+  frozen, bold white text on Agent Hub's own copper-dim brand color -
+  rather than left as plain unstyled text the way every Sheets-created
+  tracker previously looked. Deliberately fails silently
+  (`sheets_client._format_header_row`) if the styling call itself errors
+  - it's cosmetic, and a flow's actual Create action succeeding matters
+  far more than the header looking nice, so a styling hiccup should never
+  be why someone's tracker failed to get created.
 
 - **The MCP client handles both response shapes real servers use, and
   re-initializes on every call rather than caching a session.** MCP's

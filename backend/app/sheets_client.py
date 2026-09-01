@@ -62,15 +62,49 @@ def create_spreadsheet(title: str, headers: list[str] | None = None, sheet_name:
     _handle_error(resp, "create")
     data = resp.json()
     spreadsheet_id = data["spreadsheetId"]
+    sheet_id = data["sheets"][0]["properties"]["sheetId"]
 
     if headers:
         update_row_at(spreadsheet_id, sheet_name, row_number=1, values=headers, impersonate=impersonate)
+        _format_header_row(spreadsheet_id, sheet_id, len(headers), impersonate=impersonate)
 
     return {
         "spreadsheet_id": spreadsheet_id,
         "title": title,
         "url": data.get("spreadsheetUrl", f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"),
     }
+
+
+def _format_header_row(spreadsheet_id: str, sheet_id: int, column_count: int, *, impersonate: str | None = None) -> None:
+    """Bold white text on a dark background, frozen so it stays visible while
+    scrolling - the same basic treatment any well-made tracker sheet gets by
+    hand, just applied automatically. Purely cosmetic - never raises even if
+    it fails, since a plain unstyled header is a fine spreadsheet, just a
+    less polished one, and this shouldn't be why a Create action fails."""
+    body = {
+        "requests": [
+            {"updateSheetProperties": {
+                "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
+                "fields": "gridProperties.frozenRowCount",
+            }},
+            {"repeatCell": {
+                "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1,
+                           "startColumnIndex": 0, "endColumnIndex": column_count},
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": {"red": 0.290, "green": 0.208, "blue": 0.125},  # Agent Hub's copper-dim
+                    "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True},
+                    "verticalAlignment": "MIDDLE",
+                    "wrapStrategy": "WRAP",
+                }},
+                "fields": "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,wrapStrategy)",
+            }},
+        ],
+    }
+    try:
+        resp = httpx.post(f"{API_BASE}/{spreadsheet_id}:batchUpdate", headers=_headers(impersonate), json=body, timeout=30)
+        resp.raise_for_status()
+    except httpx.HTTPError:
+        pass  # cosmetic only - a flow's Create action should still succeed even if styling fails
 
 
 def read_rows(spreadsheet_id: str, sheet_name: str = "Sheet1", *, impersonate: str | None = None) -> list[list[str]]:
