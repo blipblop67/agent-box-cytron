@@ -32,135 +32,57 @@ rather not involve a second script.
 under their own Google account (completely normal, no admin approval
 needed for this — it's a standard feature every Google user has) that
 finds matching emails and writes them to a spreadsheet; they share that
-spreadsheet with your service account the same way they'd share it with
-a colleague; Agent Hub reads from there instead of Gmail directly.
+spreadsheet with the service account the same way they'd share it with a
+colleague; Agent Hub reads from there instead of Gmail directly.
 
-## Part 1 — Google Cloud Console (you do this)
+This exact mechanism isn't SIRIM-specific — it's documented generally in
+[`GETTING_STARTED.md`, "Connecting your own Gmail, without a Workspace
+admin"](GETTING_STARTED.md#connecting-your-own-gmail-without-a-workspace-admin),
+since anyone on the hub might want their own inbox reachable this way for
+any reason, not just this tracker. **Do that walkthrough first** (service
+account setup, the spreadsheet, the script, the trigger) — the steps
+below only cover what's specific to wiring it into this particular
+tracker.
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com),
-   create a project (or use an existing one).
-2. **APIs & Services → Library** → enable **Google Sheets API**. (Gmail
-   API isn't needed for this path — the script reads Gmail directly
-   under the inbox owner's own permissions, not through this project.)
-3. **IAM & Admin → Service Accounts → Create Service Account.** Name it
-   something clear, e.g. `coc-tracker`. No roles need to be granted here.
-4. Open the new service account → **Keys → Add Key → Create new key →
-   JSON**. This downloads the only copy of the private key — keep it
-   until Part 2.
-5. Copy the service account's **email address** (ends in
-   `.iam.gserviceaccount.com`, shown on its detail page) — the inbox
-   owner needs this in Part 3.
+## Part 1 — Follow the general walkthrough, with two SIRIM-specific tweaks
 
-## Part 2 — Agent Hub Settings (you do this)
+1. Do steps 1–8 of GETTING_STARTED.md's walkthrough above, with these two
+   changes as you go:
+   - When sharing the spreadsheet with the service account (step 4
+     there), set its role to **Editor**, not Viewer — this tracker also
+     needs to *write* the processed results back, not just read the raw
+     emails.
+   - After renaming the "Sheet1" tab to `RawEmails` (step 2 there), add a
+     **second tab** called `Tracker` — leave it empty; the flow fills it
+     in.
+2. In the script, set `SEARCH_QUERY` to:
+   ```javascript
+   const SEARCH_QUERY = 'SIRIM OR "CoC" OR "certificate of conformance" OR "certificate of conformity"';
+   ```
+   and rename the function from `checkMyInbox` to `checkForCoCEmails`
+   (matters only if you're following along literally — any name works,
+   just use the same one when setting up the trigger).
 
-1. Open **Settings** → **Google (Gmail / Drive / Calendar / Sheets)**.
-2. Paste the entire contents of the JSON key file from Part 1 → **Save**.
-   The card should show "Configured" with the service account's email.
+That's the entire bridge setup. From here, the inbox owner never has to
+touch this again.
 
-## Part 3 — The inbox owner creates one spreadsheet with two tabs
-
-Send them the service account's email address from Part 1, step 5, and
-have them do this:
-
-1. Go to [sheets.google.com](https://sheets.google.com) → create a new
-   blank spreadsheet, name it something clear (e.g. "CoC Tracker Data").
-2. Rename the default tab (bottom-left) from "Sheet1" to **`RawEmails`**.
-3. Add a second tab (the `+` button next to the tab bar) called
-   **`Tracker`** — leave it empty; Agent Hub fills it in later.
-4. Copy the spreadsheet ID from the browser's address bar — the long
-   string between `/d/` and `/edit`. Send this to whoever's building the
-   flow (you).
-5. Click **Share** (top right) → paste the service account's email
-   address → set it to **Editor** → Share (uncheck "notify," it's not a
-   real inbox).
-
-## Part 4 — The inbox owner sets up the script
-
-Still in that spreadsheet: **Extensions → Apps Script**. Delete
-whatever's there and paste this in:
-
-```javascript
-function checkForCoCEmails() {
-  const SHEET_NAME = 'RawEmails';
-  const SEARCH_QUERY = 'SIRIM OR "CoC" OR "certificate of conformance" OR "certificate of conformity"';
-  const MAX_TRACKED_IDS = 300; // stays well under Apps Script's ~9KB per-property storage limit
-
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    throw new Error('Sheet tab "' + SHEET_NAME + '" not found - check the tab name matches exactly');
-  }
-
-  // add the header row once, the first time this ever runs
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Message ID', 'Date', 'From', 'Subject', 'Snippet']);
-  }
-
-  // remembers which messages have already been written, so re-running never
-  // adds the same email twice - this is what makes it safe to run on a timer
-  // forever without the sheet filling up with duplicates
-  const props = PropertiesService.getScriptProperties();
-  const seenIds = new Set(JSON.parse(props.getProperty('seenMessageIds') || '[]'));
-
-  const threads = GmailApp.search(SEARCH_QUERY, 0, 50);
-  const newRows = [];
-  const newIds = [];
-
-  threads.forEach(function (thread) {
-    thread.getMessages().forEach(function (message) {
-      const id = message.getId();
-      if (seenIds.has(id)) return; // already written in a previous run
-      newRows.push([
-        id,
-        message.getDate(),
-        message.getFrom(),
-        message.getSubject(),
-        message.getPlainBody().substring(0, 500),
-      ]);
-      newIds.push(id);
-    });
-  });
-
-  if (newRows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
-  }
-
-  const updatedSeenIds = Array.from(seenIds).concat(newIds).slice(-MAX_TRACKED_IDS);
-  props.setProperty('seenMessageIds', JSON.stringify(updatedSeenIds));
-
-  Logger.log('Checked ' + threads.length + ' thread(s), added ' + newRows.length + ' new row(s)');
-}
-```
-
-Then:
-
-1. Give the project a name (top left, e.g. "CoC Email Checker").
-2. Click **Run**. It'll ask to authorize — this is the inbox owner
-   approving their *own* script to access their *own* Gmail and Sheets,
-   nothing to do with any admin setting. If it shows an "unverified app"
-   warning, that's expected for a personal, unpublished script — click
-   **Advanced → Go to project (unsafe) → Allow**.
-3. Click the clock icon (**Triggers**) in the left sidebar → **Add
-   Trigger** → function `checkForCoCEmails` → Event source **Time-driven**
-   → Hour timer → every 1–6 hours → **Save**.
-
-That's everything the inbox owner ever has to do. From here on, it runs
-itself.
-
-## Part 5 — Build the flow (you do this)
+## Part 2 — Build the flow (you do this)
 
 1. Open **Flows** → **"SIRIM CoC Progress Tracker"** template.
 2. Click the **Email** node → delete it.
 3. Drag a **Sheets** node into its place, wire it between Input and the
    LLM node the same way the Email node was connected. Configure it:
    - Action: **Read**
-   - Spreadsheet ID: the ID from Part 3, step 4
+   - Spreadsheet ID: the ID copied when the inbox owner created the
+     spreadsheet (GETTING_STARTED.md's walkthrough, step 3)
    - Sheet name: `RawEmails`
    - Impersonate: **leave blank** — the service account reads this via
-     the sharing set up in Part 3, no impersonation needed
+     the sharing set up in that same walkthrough, no impersonation
+     needed
 4. Click the final **Sheets** node (the upsert step) → same spreadsheet
    ID, Sheet name: `Tracker`, Impersonate also blank. **Save.**
 
-## Part 6 — Tune the search query
+## Part 3 — Tune the search query
 
 The default in the script (Part 4) is:
 
@@ -179,7 +101,7 @@ from:sirim-qas.com.my OR from:compliance-partners.com
 Edit the `SEARCH_QUERY` line in the Apps Script and save — it takes
 effect on the next scheduled run.
 
-## Part 7 — Schedule the Agent Hub flow
+## Part 4 — Schedule the Agent Hub flow
 
 1. With the flow open, click **Schedule** → **Add schedule**.
 2. **Runs**: "Every N minutes" for every few hours, or "Once a day" —
@@ -189,7 +111,7 @@ effect on the next scheduled run.
 3. **Input**: doesn't matter for this flow — type anything.
 4. **Create schedule**.
 
-## Part 8 — Test end to end before trusting it
+## Part 5 — Test end to end before trusting it
 
 1. Manually run the Apps Script once (Part 4) to populate some rows.
 2. In Agent Hub, click **Run this flow** — check the trace: does the
@@ -289,8 +211,9 @@ spreadsheet, then run again with nothing new and confirm a graceful
   re-run.
 - **Agent Hub's Sheets node fails with "Access denied" or "not found"**:
   the spreadsheet ID is wrong, or it wasn't actually shared with the
-  service account's exact email address (Part 3, step 5) — reshare it
-  and confirm the role is Editor.
+  service account's exact email address — reshare it and confirm the
+  role is Editor (this tracker writes results back, so Viewer alone
+  isn't enough, unlike the general walkthrough's default).
 
 **Path A specifically:**
 - **"unauthorized_client" or "access_denied" when testing on Settings**:

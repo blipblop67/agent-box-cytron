@@ -320,6 +320,103 @@ own account" model would have been: whoever controls this one key can
 make it act as anyone a Workspace admin has authorized it for, not just
 themselves. That's exactly why it's admin-only to set up.
 
+### Connecting your own Gmail, without a Workspace admin
+
+Domain-wide delegation (step 7 above) needs a Workspace super admin -
+not always available, especially quickly. If you personally want a flow
+to read **your own** Gmail and don't have that access, there's a second
+way in that needs nobody's permission but your own: a small script,
+running under your own Google account, that finds emails matching
+whatever you're looking for and drops them into a spreadsheet the
+service account can read. No domain-wide delegation, no admin
+involved - you set this up entirely yourself, once, in about five
+minutes.
+
+**This is per-person, not something an admin flips on for the whole
+team.** Everyone who wants their own inbox reachable this way does this
+same walkthrough themselves, once, for their own account - the same way
+everyone used to individually click "Connect" under the old model. The
+"whole device" part is that this mechanism is available to anyone on the
+hub who wants it, not that one setup covers everyone.
+
+1. Go to [sheets.google.com](https://sheets.google.com) → create a new
+   blank spreadsheet, name it whatever's clear (e.g. "My Agent Hub
+   Inbox Bridge").
+2. Rename the default "Sheet1" tab to **`RawEmails`**.
+3. Copy the spreadsheet ID from the browser's address bar - the long
+   string between `/d/` and `/edit`. You'll need this in a flow later.
+4. Click **Share** (top right) → paste the service account's email
+   address (shown on the Settings page's Google card, once an admin's
+   configured it - ends in `.iam.gserviceaccount.com`) → set it to
+   **Viewer** (the service account only needs to read this, never write
+   to it) → Share (uncheck "notify," it's not a real inbox).
+5. Still in that spreadsheet: **Extensions → Apps Script**. Delete
+   whatever's there, paste this in:
+
+```javascript
+function checkMyInbox() {
+  const SHEET_NAME = 'RawEmails';
+  // Edit this to match whatever you actually want to find - normal Gmail
+  // search syntax works here, the same as typing into Gmail's own search bar.
+  const SEARCH_QUERY = 'from:example.com OR subject:"weekly report"';
+  const MAX_TRACKED_IDS = 300; // stays well under Apps Script's ~9KB per-property storage limit
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    throw new Error('Sheet tab "' + SHEET_NAME + '" not found - check the tab name matches exactly');
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['Message ID', 'Date', 'From', 'Subject', 'Snippet']);
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const seenIds = new Set(JSON.parse(props.getProperty('seenMessageIds') || '[]'));
+
+  const threads = GmailApp.search(SEARCH_QUERY, 0, 50);
+  const newRows = [];
+  const newIds = [];
+
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      const id = message.getId();
+      if (seenIds.has(id)) return; // already written in a previous run
+      newRows.push([
+        id, message.getDate(), message.getFrom(), message.getSubject(),
+        message.getPlainBody().substring(0, 500),
+      ]);
+      newIds.push(id);
+    });
+  });
+
+  if (newRows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
+  }
+
+  const updatedSeenIds = Array.from(seenIds).concat(newIds).slice(-MAX_TRACKED_IDS);
+  props.setProperty('seenMessageIds', JSON.stringify(updatedSeenIds));
+}
+```
+
+6. Change `SEARCH_QUERY` on the second line to match whatever you
+   actually want to find.
+7. Name the project (top left), click **Run**. It'll ask you to
+   authorize - this is you approving your own script to read your own
+   Gmail, nothing to do with any admin setting. "Unverified app" warning
+   is expected for a personal script - **Advanced → Go to project
+   (unsafe) → Allow**.
+8. Clock icon (**Triggers**) → **Add Trigger** → function
+   `checkMyInbox` → Event source **Time-driven** → Hour timer → every
+   1–6 hours → **Save**.
+
+That's the whole setup. From here, any flow can read what this script
+finds: a **Sheets** node, Action **Read**, your spreadsheet ID, sheet
+name `RawEmails`, **Impersonate left blank** - the service account
+reads it through the sharing from step 4, no impersonation needed at
+all. What you build on top of that (an LLM node to summarize it, a
+tracker like the SIRIM CoC template, anything else) is exactly the same
+either way - only how the Gmail data reaches the flow is different.
+
 ### Setting up Telegram bots
 
 No Google Cloud project needed — anyone can create as many bots as they
