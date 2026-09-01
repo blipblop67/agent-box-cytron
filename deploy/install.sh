@@ -99,6 +99,13 @@ sed \
   -e "s|__HOME__|$HUB_HOME|g" \
   "$ROOT_DIR/deploy/agent-hub.service" | sudo tee /etc/systemd/system/agent-hub.service >/dev/null
 
+echo "==> Installing the first-boot unique-hostname service"
+chmod +x "$ROOT_DIR/deploy/set-unique-hostname.sh"
+sed \
+  -e "s|__ROOT_DIR__|$ROOT_DIR|g" \
+  "$ROOT_DIR/deploy/agent-hub-hostname.service" | sudo tee /etc/systemd/system/agent-hub-hostname.service >/dev/null
+sudo systemctl enable agent-hub-hostname >/dev/null 2>&1
+
 sudo systemctl daemon-reload
 sudo systemctl enable agent-hub >/dev/null 2>&1
 sudo systemctl restart agent-hub

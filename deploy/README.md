@@ -27,6 +27,19 @@ In the Imager's advanced options (the gear icon), before writing:
 - Set a username/password
 - Configure Wi-Fi, if not using Ethernet
 
+**One thing worth knowing before you set that hostname**: `install.sh`
+(Section 3 below) installs a one-time service that appends a unique
+random suffix to whatever hostname is set here - so `agenthub` becomes
+`agenthub-a3f9c1e2` (an actual example, yours will differ), the next
+time this Pi actually *reboots* after `install.sh` has installed it (not
+immediately when the script finishes - that only restarts the hub's own
+service, not the whole machine). This applies to every install, not just
+ones destined to be cloned for production - see Section 7 for why.
+Whatever you set here is the *base* others will see, not the final
+address - references to `agenthub.local` for the rest of this doc, up
+until that first real reboot happens, should be read as shorthand for
+that base, with your own device's actual suffix in practice from then on.
+
 Boot it, then SSH in: `ssh <username>@agenthub.local`
 
 ## 2. Get this whole folder onto the Pi
@@ -161,17 +174,31 @@ unique per physical unit, not shared across a whole production run:
 - Whatever accounts, flows, and settings exist on this Pi right now -
   including any real credentials ever typed into Settings while testing
   - would ship to every customer as-is.
-- Identical SSH host keys and machine IDs across every cloned unit cause
-  host-key warnings and network identification collisions the moment two
-  units are ever reachable from the same place.
+- Identical SSH host keys, machine IDs, and hostnames across every cloned
+  unit cause host-key warnings, network identification collisions, and
+  (for the hostname specifically) every unit trying to publish the exact
+  same mDNS name the moment two are ever reachable from the same place.
 
 None of this needs manual fixing per unit, though - Agent Hub already
 creates its database and encryption key fresh, automatically, the first
 time it starts with no existing data directory (that's exactly how a
-brand-new install already behaves). The same is true of SSH host keys and
-the machine ID at the OS level. The only thing needed is making sure none
-of that state exists yet at the moment of cloning, so each unit's *own*
-first boot is what generates it - not this one Pi's boot, before cloning.
+brand-new install already behaves). SSH host keys and the machine ID work
+the same way at the OS level, and this hub adds one more: a unique
+hostname, generated the same way (see below). The only thing needed is
+making sure none of that state exists yet at the moment of cloning, so
+each unit's *own* first boot is what generates it - not this one Pi's
+boot, before cloning.
+
+**This works regardless of what tool you use to clone the SSD** -
+Raspberry Pi Imager, `dd`, or a dedicated hardware duplicator that does
+raw block-level copying with no per-target customization step at all.
+The uniqueness comes from software running on each unit's own first
+boot, not from anything done during the copy itself, which matters
+specifically for duplicator hardware: it produces byte-for-byte identical
+copies with no opportunity to configure any individual target, so
+anything that depended on customizing each clone as it's written (like
+setting a hostname through Imager's OS customization options) simply
+isn't available with that equipment.
 
 **Run this on the Pi you're about to clone, as the very last step, right
 before pulling the SSD:**
@@ -182,27 +209,35 @@ before pulling the SSD:**
 
 It asks for a typed confirmation before doing anything (it's destructive
 and can't be undone), then wipes the Agent Hub data directory, removes
-`backend/.env` if one exists, clears this Pi's SSH host keys and machine
-ID, and clears shell history and logs. Full details of exactly what it
-touches and why are in the script itself.
+`backend/.env` if one exists, clears this Pi's SSH host keys, machine ID,
+and unique-hostname marker, and clears shell history and logs. It also
+asks what base hostname every unit cloned from this image should share
+(each unit adds its own random suffix automatically - see below) and sets
+that on this Pi. Full details of exactly what it touches and why are in
+the script itself.
 
 **After it finishes: don't power this specific Pi back on.** A normal
 boot would immediately regenerate a fresh identity for *this* Pi, which
 would then get baked into every clone taken after that - the same
 problem all over again, just one step removed. Pull the SSD and clone it
-with whatever tool you'd normally use.
+with whatever tool you'd normally use - no per-target customization step
+needed, including for the hostname.
 
-**One thing the script can't do for you**: give each cloned copy its own
-unique hostname before it ships. Every clone starts out identical, so if
-none of them get a distinct hostname, they'll all try to claim the same
-`agenthub.local` address the moment two are ever on the same network -
-Raspberry Pi Imager's OS customization options can set a hostname per-SSD
-as you write each individual clone, which is the easiest point to do
-this.
+**How the hostname stays unique with zero manual steps, even on a
+duplicator:** a small script (`deploy/set-unique-hostname.sh`, installed
+and enabled by `install.sh` as its own systemd service) runs exactly once
+on this unit's genuinely first boot - before it, systemd itself has
+already generated a fresh, unique machine ID (the same one
+`prepare-golden-image.sh` clears), and this script uses the first 8
+characters of it as a suffix on the hostname you set above (e.g.
+`agenthub-a3f9c1e2`), then marks itself done so it never runs again on
+that unit. Every cloned unit does this independently, on its own actual
+first power-on for a real customer - nothing to configure per unit,
+before, during, or after cloning, on any cloning hardware.
 
-Everything else - the database, the encryption key, SSH identity - none
-of it needs touching again after that. Each unit generates its own,
-correctly, the first time it actually powers on for a customer.
+Everything else - the database, the encryption key, SSH identity - works
+exactly the same way: each unit generates its own, correctly, the first
+time it actually powers on for a customer.
 
 ## Confirming it really does start on boot
 

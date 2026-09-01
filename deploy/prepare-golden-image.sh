@@ -11,15 +11,21 @@
 #   - whatever test/dev accounts, flows, and settings exist on this Pi
 #     right now - including any real credentials that were ever typed
 #     into Settings while testing
-#   - identical SSH host keys and machine IDs across every unit, which
-#     causes host-key warnings and network identification collisions the
-#     moment two units are ever on the same network or SSH'd into from
-#     the same machine
+#   - identical SSH host keys, machine IDs, and hostnames across every
+#     unit, which causes host-key warnings, network identification
+#     collisions, and (for the hostname specifically) every unit trying
+#     to publish the exact same mDNS name the moment two are ever on the
+#     same network
 #
 # This script wipes all of that. Each cloned copy regenerates its own -
 # a blank Agent Hub database, its own unique encryption key, its own SSH
-# host keys, its own machine ID - automatically, the first time THAT
-# specific unit boots. Nothing to run again after cloning.
+# host keys, its own machine ID, its own unique hostname - automatically,
+# the first time THAT specific unit boots. Nothing to run again after
+# cloning, and nothing that depends on the cloning tool having any
+# per-target customization step (a hardware duplicator doing raw
+# block-level copies has none - the uniqueness has to come from the
+# software's own first-boot behavior, not from anything done during the
+# copy itself).
 #
 # RUN THIS LAST, right before the SSD is removed to be cloned. Do NOT
 # power this specific Pi back on afterward until cloning is done - a
@@ -36,7 +42,7 @@ echo
 echo "This will permanently delete, on THIS Pi:"
 echo "  - $DATA_DIR (every account, flow, document, and stored credential)"
 echo "  - $ROOT_DIR/backend/.env (if it exists - may hold real secrets)"
-echo "  - this Pi's SSH host keys and machine ID"
+echo "  - this Pi's SSH host keys, machine ID, and unique-hostname marker"
 echo "  - shell history and system logs"
 echo
 echo "There is no undo. Make sure this is really the source Pi you intend"
@@ -65,6 +71,22 @@ echo "==> Clearing the machine ID (systemd regenerates this on first boot)"
 sudo truncate -s 0 /etc/machine-id
 sudo rm -f /var/lib/dbus/machine-id
 
+echo
+echo "What hostname should every unit cloned from this image be based on?"
+echo "Each cloned unit gets a unique random suffix added automatically on"
+echo "its own first boot (e.g. 'agenthub-a3f9c1e2') - this is just the"
+echo "shared, recognizable part every unit's name will start with."
+read -r -p "Base hostname [agenthub]: " BASE_HOSTNAME
+BASE_HOSTNAME="${BASE_HOSTNAME:-agenthub}"
+echo "==> Setting this Pi's own hostname to '$BASE_HOSTNAME' (the clone base)"
+sudo hostnamectl set-hostname "$BASE_HOSTNAME"
+
+echo "==> Clearing the unique-hostname marker, so it's genuinely unset on this golden image"
+echo "    (if this Pi has been used for testing, this first-boot step may already have"
+echo "    fired on it once - clearing it here guarantees every clone gets its own fresh"
+echo "    run, instead of silently inheriting an already-used marker from this Pi)"
+sudo rm -f /etc/agent-hub-hostname-set
+
 echo "==> Clearing shell history"
 history -c 2>/dev/null || true
 rm -f "$HOME/.bash_history"
@@ -78,10 +100,11 @@ echo "Done. This SSD is ready to clone."
 echo
 echo "Next steps:"
 echo "  1. Power this Pi off now - don't boot it again before cloning."
-echo "  2. Clone the SSD with your usual tool."
-echo "  3. Give each cloned copy its OWN unique hostname before it ships -"
-echo "     identical hostnames collide over mDNS the moment two units are"
-echo "     on the same network. Raspberry Pi Imager's OS customization"
-echo "     options can set this per-SSD as you write each clone."
-echo "  4. Nothing else to do - each unit's own first boot generates its"
-echo "     own database, encryption key, and SSH identity automatically."
+echo "  2. Clone the SSD with your usual tool - a hardware duplicator, dd,"
+echo "     Raspberry Pi Imager, whatever you're using. No per-target"
+echo "     customization step is needed, including for the hostname."
+echo "  3. Nothing else to do. Each unit's own first boot generates its own"
+echo "     database, encryption key, SSH identity, AND a unique hostname"
+echo "     (base '$BASE_HOSTNAME' plus a random suffix) automatically -"
+echo "     including on hardware that clones via raw block-level copying"
+echo "     with no customization step at all."

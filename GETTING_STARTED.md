@@ -86,13 +86,20 @@ it runs.
 
 1. Connect it to your router with an Ethernet cable, and plug in power.
 2. Wait about a minute for it to finish starting up (the first boot after
-   power is off can take a little longer than normal).
+   power is off can take a little longer than normal — it's also
+   choosing this device's unique address at this point, a one-time
+   thing it never has to repeat).
 3. From any laptop, phone, or tablet on the same network, open a browser
-   and go to:
+   and go to the address for your specific device — check the label on
+   the unit itself if it has one, in the shape:
 
 ```
-http://agenthub.local:8811
+http://agenthub-XXXXXXXX.local:8811
 ```
+
+(the letters/numbers after `agenthub-` are unique to your device — every
+Agent Hub has its own). No label to check, or not sure? Section 15 below
+has a reliable way to find it from your router.
 
 That's the whole setup. If that address doesn't load, see
 [Section 15](#15-if-something-goes-wrong) — it's almost always one small
@@ -623,7 +630,7 @@ through the browser.
 
 ## 15. If something goes wrong
 
-**`agenthub.local` doesn't load at all:**
+**Don't know your device's exact address, or it doesn't load:**
 1. Check the physical basics first — is it plugged into power, and is the
    Ethernet cable connected to your router on both ends? Most connection
    issues are one of these two.
@@ -632,14 +639,17 @@ through the browser.
 3. Make sure the device you're browsing from is on the **same network** —
    a phone on cellular data instead of your home Wi-Fi won't be able to
    reach it, for instance.
-4. Some networks (especially "guest" Wi-Fi, or certain routers) block the
-   `.local` address style entirely. Try finding its actual address
-   instead: open your router's admin page (often something like
-   `192.168.1.1` in a browser — check the sticker on the router itself,
-   or your ISP's app) and look for a connected device named `agenthub` in
-   its list of devices — use the IP address shown there instead, e.g.
-   `http://192.168.1.42:8811`.
-5. If none of that gets you in, try power-cycling it — unplug for 10
+4. **The most reliable way to find your exact address**: open your
+   router's admin page (often something like `192.168.1.1` in a browser
+   — check the sticker on the router itself, or your ISP's app) and look
+   for a connected device whose name **starts with `agenthub-`** in its
+   list of devices — the rest of that name is what goes in the browser
+   (`http://agenthub-thatname.local:8811`), or use the IP address shown
+   there directly instead, e.g. `http://192.168.1.42:8811`.
+5. Some networks (especially "guest" Wi-Fi, or certain routers) block the
+   `.local` address style entirely, even once you have the right name —
+   the IP address from step 4 always works as a fallback.
+6. If none of that gets you in, try power-cycling it — unplug for 10
    seconds, plug back in, wait a minute.
 6. Still nothing? That's a support question, not something to keep
    troubleshooting alone — reach out with what you've already tried.
@@ -687,7 +697,7 @@ Read the node it names; the fix is almost always right there.
 
 | What | Value |
 |---|---|
-| Web address | `http://agenthub.local:8811` or `http://<pi-ip>:8811` |
+| Web address | `http://agenthub-<your device's code>.local:8811` or `http://<pi-ip>:8811` |
 | Data directory | `~/.agent-hub` (override with `AGENT_HUB_DATA_DIR`) |
 | Database | `~/.agent-hub/agent_hub.db` (SQLite) |
 | systemd service name | `agent-hub` |
