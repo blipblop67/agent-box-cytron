@@ -59,6 +59,9 @@ def chat_completion(messages: list[dict], *, model: str | None = None, provider:
             raise LlmNotConfigured(f"{provider} rejected the request ({status}) - double-check the API key on {where}") from exc
         if status == 404:
             raise LlmNotConfigured(f"{provider} doesn't recognize the model '{model}' - check it's spelled right and available") from exc
+        if status == 429:
+            hint = " - a free/no-cost model shares a strict limit across everyone using it; adding credits or switching model usually fixes this" if provider == "openrouter" else ""
+            raise LlmNotConfigured(f"{provider} is rate-limiting these requests (429){hint}. Wait a bit and try again") from exc
         raise LlmNotConfigured(f"{provider} request failed ({status})") from exc
     except httpx.HTTPError as exc:
         raise LlmNotConfigured(f"Couldn't reach {provider}: {exc}") from exc

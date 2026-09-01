@@ -66,6 +66,20 @@ def main():
     assert raised2 is not None and "model" in raised2.lower() and "not/a-real-model" in raised2
     print(f"[ok] a 404 gives a model-specific message: \"{raised2}\"")
 
+    # --- a 429 (rate limited) gets its own specific message, with a free-tier
+    # hint for OpenRouter specifically since that's overwhelmingly the cause ---
+    with patch("httpx.post", side_effect=fake_post_factory(429)):
+        try:
+            llm_provider.chat_completion([{"role": "user", "content": "hi"}])
+            raised_429 = None
+        except llm_provider.LlmNotConfigured as exc:
+            raised_429 = str(exc)
+    assert raised_429 is not None
+    assert "Client error" not in raised_429, f"raw httpx text leaked through: {raised_429}"
+    assert "429" in raised_429 and "rate" in raised_429.lower()
+    assert "free" in raised_429.lower() or "credit" in raised_429.lower()
+    print(f"[ok] a 429 gives a specific rate-limit message with a free-tier hint: \"{raised_429}\"")
+
     # --- a network-level failure (unreachable host) is also cleaned up ---
     def fake_connect_error(url, **kwargs):
         raise httpx.ConnectError("Connection refused", request=httpx.Request("POST", url))
