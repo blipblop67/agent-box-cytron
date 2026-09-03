@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Table, Send, CircleCheck, ExternalLink, Plus, Trash2, Lock, Users2 } from 'lucide-react'
+import { Table, Send, CircleCheck, ExternalLink, Plus, Trash2, Lock, Users2, UserCircle } from 'lucide-react'
 import { api } from '../lib/api'
 import Button from '../components/common/Button'
 import Badge from '../components/common/Badge'
@@ -53,7 +53,81 @@ export default function ConnectionsPage() {
           </Link>
         </div>
 
+        {settings?.google_oauth_client_secret_configured && <PersonalGoogleConnectionsSection />}
+
         <TelegramBotsSection />
+      </div>
+    </div>
+  )
+}
+
+const GOOGLE_SERVICES = [
+  { key: 'email', label: 'Gmail' },
+  { key: 'drive', label: 'Drive' },
+  { key: 'calendar', label: 'Calendar' },
+  { key: 'sheets', label: 'Sheets' },
+]
+
+function PersonalGoogleConnectionsSection() {
+  const [statuses, setStatuses] = useState(null)
+
+  async function refresh() {
+    const results = await Promise.all(GOOGLE_SERVICES.map((s) => api.get(`/${s.key}/status`)))
+    setStatuses(Object.fromEntries(GOOGLE_SERVICES.map((s, i) => [s.key, results[i]])))
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  async function handleConnect(serviceKey) {
+    const result = await api.get(`/${serviceKey}/auth/start`)
+    window.location.href = result.authorization_url
+  }
+
+  async function handleDisconnect(serviceKey) {
+    await api.delete(`/${serviceKey}/auth`)
+    refresh()
+  }
+
+  if (statuses === null) return null
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-ink-muted">
+          <UserCircle size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-ink">Your own Google account</span>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Connect your own Gmail/Drive/Calendar/Sheets - a flow can then be set to act as{' '}
+            <em>you</em> specifically, instead of the shared service account. Personal to you; nobody
+            else sees or uses these connections.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        {GOOGLE_SERVICES.map(({ key, label }) => {
+          const status = statuses[key]
+          return (
+            <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-line-strong bg-surface-raised px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink">{label}</span>
+                {status.connected ? (
+                  <Badge variant="signal"><CircleCheck size={10} className="mr-1" />{status.account_email}</Badge>
+                ) : (
+                  <Badge variant="neutral">Not connected</Badge>
+                )}
+              </div>
+              {status.connected ? (
+                <Button variant="ghost" size="sm" onClick={() => handleDisconnect(key)}>Disconnect</Button>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={() => handleConnect(key)}>Connect</Button>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

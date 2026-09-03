@@ -38,6 +38,7 @@ export default function SettingsPage() {
 
       <LlmSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <ServiceAccountCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <GoogleOAuthClientCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <DuckDnsSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
@@ -131,6 +132,130 @@ function LlmSettingsCard({ settings, setSettings, isAdmin }) {
         </div>
       )}
     </form>
+  )
+}
+
+function GoogleOAuthClientCard({ settings, setSettings, isAdmin }) {
+  const [clientId, setClientId] = useState(settings.google_oauth_client_id || '')
+  const [clientSecret, setClientSecret] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [copied, setCopied] = useState(null)
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const callbackPaths = {
+    Gmail: '/api/email/auth/callback',
+    Drive: '/api/drive/auth/callback',
+    Calendar: '/api/calendar/auth/callback',
+    Sheets: '/api/sheets/auth/callback',
+  }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const updated = await api.put('/settings', {
+        google_oauth_client_id: clientId,
+        google_oauth_client_secret: clientSecret || undefined,
+      })
+      setSettings(updated)
+      setClientSecret('')
+      setSaved(true)
+    } catch (err) {
+      setSaveError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCopy(label, value) {
+    await navigator.clipboard.writeText(value)
+    setCopied(label)
+    setTimeout(() => setCopied(null), 1500)
+  }
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold text-ink">Google sign-in (your own OAuth client)</h2>
+        <p className="mt-1 text-xs text-ink-muted">
+          A third way to connect Google, alongside the service account above - not a replacement for
+          it. This gives whoever's building a flow the familiar "Connect" button experience: click it,
+          sign into their own Google account in a popup, done. Each hub needs its own Google Cloud
+          project for this (Google doesn't support one shared client across many separately-hosted
+          hubs) - create one in{' '}
+          <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            Google Cloud Console <ExternalLink size={10} className="inline" />
+          </a>{' '}
+          (APIs & Services → Credentials → Create Credentials → OAuth client ID → Web application),
+          enable whichever of Gmail/Drive/Calendar/Sheets APIs you need, then paste the Client ID and
+          Secret below.
+        </p>
+        <p className="mt-2 text-xs text-ink-muted">
+          <strong className="text-ink">Before saving</strong>, register these exact redirect URIs on
+          that OAuth client (only add the ones for services you'll actually use):
+        </p>
+        <div className="mt-1.5 space-y-1">
+          {Object.entries(callbackPaths).map(([label, path]) => (
+            <div key={label} className="flex items-center gap-2">
+              <span className="w-16 shrink-0 text-[11px] text-ink-faint">{label}</span>
+              <code className="min-w-0 flex-1 truncate rounded bg-surface-raised px-2 py-1 font-mono text-[11px] text-ink-muted">
+                {origin}{path}
+              </code>
+              <button
+                type="button"
+                onClick={() => handleCopy(label, `${origin}${path}`)}
+                className="shrink-0 rounded p-1 text-ink-faint hover:bg-surface-raised hover:text-copper"
+                title="Copy"
+              >
+                {copied === label ? <Check size={13} className="text-signal" /> : <Copy size={13} />}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-ink-muted">
+          If this hub is reachable at a `.local` name or raw IP, Google will reject these as invalid
+          redirect URIs - the free DuckDNS option below fixes that first.
+        </p>
+      </div>
+
+      {settings.google_oauth_client_secret_configured && (
+        <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
+          <CircleCheck size={13} className="text-signal shrink-0" />
+          <span className="text-ink">Configured - anyone can click "Connect" on the Connections page</span>
+        </div>
+      )}
+
+      {isAdmin && (
+        <form onSubmit={handleSave} className="space-y-3">
+          <Field label="Client ID">
+            <TextInput
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="123456789-abc...apps.googleusercontent.com"
+            />
+          </Field>
+          <Field label="Client secret" hint={settings.google_oauth_client_secret_configured ? undefined : 'From the OAuth client you created in Google Cloud Console'}>
+            <div className="flex items-center gap-2">
+              <TextInput
+                type="password"
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+                placeholder={settings.google_oauth_client_secret_configured ? '••••••••••••  (leave blank to keep current secret)' : ''}
+              />
+              {settings.google_oauth_client_secret_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+            </div>
+          </Field>
+          {saveError && <p className="text-xs text-danger">{saveError}</p>}
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={!clientId || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            {saved && <span className="text-xs text-signal">Saved</span>}
+          </div>
+        </form>
+      )}
+    </div>
   )
 }
 
