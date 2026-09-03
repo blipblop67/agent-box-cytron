@@ -30,9 +30,8 @@ starts from the first time you power it on.
 
 Agent Hub is a self-hosted platform for building AI agents as visual flows —
 drag nodes onto a canvas, wire them together, and run them. It's built to
-run on a Raspberry Pi 5 (or a Windows machine for development), not in
-someone else's cloud, so your data and your credentials stay on hardware
-you control.
+run on a Raspberry Pi 5, not in someone else's cloud, so your data and
+your credentials stay on hardware you control.
 
 A **flow** is a small directed graph: an Input node, maybe a Knowledge base
 or Web search node for context, an LLM node to reason about it, a tool node
@@ -109,12 +108,6 @@ It keeps running on its own from here — if it's ever unplugged or your
 power goes out, it starts itself back up automatically the next time it
 gets power, exactly where it left off. Nothing to restart or reconfigure.
 
-**One thing worth knowing**: the first time it starts listening on a
-network port, Windows may show a "Windows Defender Firewall has blocked
-some features of this app" popup. Check **both** Private and Public
-networks and click "Allow access" — if you miss this, the hub works fine
-from this machine but silently isn't reachable from anyone else's.
-
 ## 4. Your first login
 
 Open the address from Section 3. You'll see a name and password field —
@@ -167,6 +160,32 @@ part entirely (no consent screen, no redirect address to get right).
 Full walkthrough in [Section 9](#9-connecting-your-tools-connections-page);
 once you've created the key in Google Cloud Console, paste its entire
 JSON contents into this card.
+
+### Google sign-in (your own OAuth client)
+
+A third, separate way to connect Google, alongside the service account
+above — optional, and not a replacement for it. This is the familiar
+"click Connect, sign into Google in a popup" experience, for anyone who'd
+rather do that than deal with domain-wide delegation or the Apps Script
+bridge (both covered in [Section 9](#9-connecting-your-tools-connections-page),
+along with this one). Needs its own Google Cloud project — Google doesn't
+support one shared OAuth client across many separately-hosted hubs, so
+this can't be pre-filled the way the LLM provider can. The card computes
+and displays the exact redirect URIs to register for whichever of
+Gmail/Drive/Calendar/Sheets you want, with copy buttons.
+
+### Free remote domain (DuckDNS)
+
+Optional, and unrelated to Google entirely — this exists for one reason:
+some networks (guest Wi-Fi, certain routers) block `.local` address
+resolution outright. If that's ever a recurring problem on your specific
+network, a free DuckDNS account gives the hub a real address that
+resolves the same way everywhere, and the hub keeps it updated
+automatically from then on (checking every few minutes in the
+background, so it survives your router handing out a new IP address
+later). Most hubs never need this — see
+[Section 15](#15-if-something-goes-wrong) for when it's actually worth
+setting up.
 
 ### Web search
 
@@ -270,18 +289,27 @@ deliver the answer twice.
 
 ## 9. Connecting your tools (Connections page)
 
-**Gmail, Drive, Calendar, and Sheets are hub-wide, not per-person** — one
-Google service account, set up once by an admin, that every flow uses.
-A node's **Impersonate** field decides what it acts as for that one
-call: left blank, the service account's own identity; set to a real
-address, that specific person (needs a Workspace admin's one-time
-sign-off — Section 9 below covers exactly when that's needed).
+**There are three separate ways to connect Google, not one** — pick
+whichever fits: a hub-wide service account (admin sets up once, every
+flow uses it — the default, and the one to start with), your own Google
+account through this hub's OAuth client (the familiar "click Connect"
+experience, if an admin's set that up), or a personal Apps Script bridge
+for your own Gmail specifically, needing nobody's permission but your
+own. All three can exist at once — a node picks between the service
+account and OAuth per node (an "Acts as" choice, once both are
+available), and the Apps Script bridge works underneath either since it
+just feeds a Sheets node like any other spreadsheet.
 
-**Telegram bots are a shared resource, working the same way** — a bot
-belongs to whichever flow it's wired into, regardless of who runs that
-flow. This is what lets a Customer Support flow and a completely separate
-Sales flow message through two different bots even if the same person
-built both.
+**A service-account node's Impersonate field** decides what it acts as
+for that one call: left blank, the service account's own identity; set
+to a real address, that specific person (needs a Workspace admin's
+one-time sign-off — covered below).
+
+**Telegram bots are a shared resource, working the same way as the
+service account** — a bot belongs to whichever flow it's wired into,
+regardless of who runs that flow. This is what lets a Customer Support
+flow and a completely separate Sales flow message through two different
+bots even if the same person built both.
 
 ### Setting up Google (Gmail / Drive / Calendar / Sheets)
 
@@ -424,6 +452,60 @@ all. What you build on top of that (an LLM node to summarize it, a
 tracker like the SIRIM CoC template, anything else) is exactly the same
 either way - only how the Gmail data reaches the flow is different.
 
+### Connecting your own Google account (OAuth)
+
+A third way in, alongside the service account and the Apps Script bridge
+above — the one that looks like a normal "Connect" button, if that's
+what you'd rather have. This needs an admin to set up this hub's own
+Google Cloud OAuth client first (Settings → "Google sign-in (your own
+OAuth client)" — see [Section 5](#5-hub-wide-setup-settings-page)); once
+that's done, anyone on the team can connect their own account with no
+further admin involvement.
+
+**For the admin, once:**
+
+1. In [Google Cloud Console](https://console.cloud.google.com), create a
+   project (or use the same one as the service account, if you set that
+   up too — they don't conflict).
+2. **APIs & Services → Credentials → Create Credentials → OAuth client
+   ID → Web application.** Enable whichever of Gmail/Drive/Calendar/Sheets
+   APIs you need first if you haven't already (APIs & Services → Library).
+3. Before saving, go back to the hub's **Settings** page — the "Google
+   sign-in" card shows the exact redirect URIs to register (one per
+   service, with copy buttons), computed from however this hub is
+   actually reached right now. Paste whichever ones you need into the
+   OAuth client's "Authorized redirect URIs" list in Google Cloud
+   Console.
+4. If this hub is currently reachable at a `.local` name or raw IP,
+   Google will reject those redirect URIs outright — it needs a real
+   domain (even a free one) or `localhost` specifically. Set up the free
+   DuckDNS option on the same Settings page first if that's the case
+   (see [Section 5](#5-hub-wide-setup-settings-page)), then use that
+   address instead.
+5. Copy the **Client ID** and **Client secret** from the OAuth client
+   Google Cloud Console just created, paste both into the Settings card
+   → Save. It should show "Configured."
+
+**For anyone on the team, after that (no admin needed):**
+
+1. Open **Connections** — a new "Your own Google account" section
+   appears once the admin's finished the steps above, with a row for
+   each of Gmail/Drive/Calendar/Sheets.
+2. Click **Connect** next to whichever service you want — you're taken
+   to Google's own sign-in/consent page, then brought straight back to
+   Connections once you approve, now showing your connected account's
+   email.
+3. On any Email/Drive/Calendar/Sheets node in a flow, there's now an
+   **Acts as** choice: the hub-wide service account (the default), or
+   "My own Google account." Pick the second, and that node acts as
+   *you* specifically — your inbox, your Drive, your calendar — using
+   the connection from step 2, nothing to do with domain-wide delegation
+   or Impersonate at all.
+
+Each person's connection is personal to them — nobody else on the hub
+can see or use it, and disconnecting (same Connections page) only
+affects that one person's own nodes.
+
 ### Setting up Telegram bots
 
 No Google Cloud project needed — anyone can create as many bots as they
@@ -460,6 +542,18 @@ trigger row in [Section 8](#8-the-five-ways-to-run-a-flow).
 | **MCP** | Calls one tool on an external MCP server — the same kind of server Claude Desktop connects to |
 | **Calculator** | Evaluates a math expression safely |
 | **Output** | The final result of the run |
+
+**Email, Drive, Calendar, and Sheets all share an "Acts as" choice** once
+more than one way to reach Google is set up (see
+[Section 9](#9-connecting-your-tools-connections-page)): the hub-wide
+service account (the default — an optional **Impersonate** field acts as
+a specific Workspace address instead of the service account's own
+identity), or, if you've personally connected your own account, "My own
+Google account" instead — that node then acts as *you*, using your own
+personal connection rather than the shared one. If only the service
+account is set up, there's just Impersonate, exactly as it's always
+worked; the "Acts as" choice only appears once there's actually
+something to choose between.
 
 The Sheets node deserves a special note since it's easy to miss: unlike
 Drive (which can only create or fully overwrite a file), Sheets can edit
@@ -546,14 +640,20 @@ need.
   thin or missing. Needs a YouTube API key.
 
 **A complete worked example — SIRIM CoC Progress Tracker:**
-- Reads certification-related emails, extracts what changed for each
-  application, and keeps a Google Sheet current — updating the existing
-  row for an application already being tracked instead of creating a
-  duplicate. Needs the Google service account set up (Section 9), plus
-  the one-time spreadsheet-setup step described in
-  [Section 10](#10-the-node-reference). Put it on a Schedule once it's
-  working, for a tracker that keeps itself current with no one touching
-  it.
+- Reads certification-related emails and keeps a Google Sheet current
+  with more than just a status line — application reference, product/
+  model, a defined status lifecycle (Submitted through Certificate
+  issued), certification scheme, the SIRIM officer's contact, target
+  deadline, a priority-tagged pending action, and certificate number once
+  issued — updating the existing row for an application already being
+  tracked instead of creating a duplicate. Needs Google connected some
+  way (any of the three in [Section 9](#9-connecting-your-tools-connections-page)
+  works — the template ships built around the service account, swap in a
+  Sheets node reading from an Apps Script bridge if that's the path
+  without admin access), plus the one-time spreadsheet-setup step
+  described in [Section 10](#10-the-node-reference). Put it on a
+  Schedule once it's working, for a tracker that keeps itself current
+  with no one touching it.
 
 ## 12. Team management
 
@@ -658,7 +758,7 @@ through the browser.
    having a reliable address.
 6. If none of that gets you in, try power-cycling it — unplug for 10
    seconds, plug back in, wait a minute.
-6. Still nothing? That's a support question, not something to keep
+7. Still nothing? That's a support question, not something to keep
    troubleshooting alone — reach out with what you've already tried.
 
 **"Not configured yet" on a Google node even after saving a service
@@ -673,12 +773,26 @@ Impersonate field is set to a real address, but a Workspace super admin
 hasn't authorized this exact service account for that scope yet in the
 Workspace Admin Console — see Section 9, step 7. Use the "Test" button
 on the Settings card to confirm this specific combination works before
-trusting it in a real flow.
+trusting it in a real flow. No admin access at all? The Apps Script
+bridge or your own OAuth connection (also Section 9) don't need
+delegation of any kind.
 
 **An Email node fails even with Impersonate left blank:** expected — a
-plain service account has no real inbox of its own for Gmail. Set
-Impersonate to a real Workspace address (needs step 7 above) rather than
-leaving it blank, which only really works for Drive/Sheets/Calendar.
+plain service account has no real inbox of its own for Gmail. Either set
+Impersonate to a real Workspace address (needs domain-wide delegation,
+step 7 above), or switch that node's "Acts as" to your own connected
+Google account instead if you've set that up (Section 9) — either fixes
+it; which one depends on whether you have Workspace admin access.
+
+**Clicking "Connect" on Connections shows a Google error page instead of
+the normal consent screen:** almost always one of a few things, and the
+error page itself lists them — the redirect URI shown on the Settings
+OAuth card doesn't exactly match what's registered on the OAuth client in
+Google Cloud Console (check for http vs https, a trailing slash, or the
+wrong hostname if the hub's address changed since it was registered), the
+relevant Gmail/Drive/Calendar/Sheets API isn't enabled for that Cloud
+project yet, or the OAuth consent screen is still in "Testing" mode and
+this specific Google account hasn't been added as a test user.
 
 **Checking for updates gives an error:** if it mentions GitHub — a 404
 usually means the configured repo/branch is wrong or private (this check
@@ -716,6 +830,7 @@ Read the node it names; the fix is almost always right there.
 |---|---|
 | LLM provider | OpenRouter API key + model, or Ollama base URL + model |
 | Google integration | Service account JSON key |
+| Google sign-in (OAuth) | Client ID, Client secret — optional, a third way to connect Google |
 | Free remote domain (DuckDNS) | Subdomain, token — optional, unrelated to Google |
 | Web search | Tavily API key |
 | YouTube search | YouTube API key |
@@ -732,10 +847,15 @@ Read the node it names; the fix is almost always right there.
 | Your own Tavily key | the hub-wide Web search key |
 | Your own YouTube key | the hub-wide YouTube key |
 
+Connecting your own Google account (Gmail/Drive/Calendar/Sheets) happens
+on the **Connections** page instead, not Account — see
+[Section 9](#9-connecting-your-tools-connections-page).
+
 ### Every node type
 
 `input` · `llm` · `knowledge_base` · `web_search` · `youtube` · `email` ·
-`drive` · `sheets` · `calendar` · `telegram` · `calculator` · `output`
+`drive` · `sheets` · `calendar` · `telegram` · `call_flow` · `mcp` ·
+`calculator` · `output`
 
 ### Every template
 
