@@ -38,6 +38,7 @@ export default function SettingsPage() {
 
       <LlmSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <ServiceAccountCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <DuckDnsSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <SmtpSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
@@ -130,6 +131,135 @@ function LlmSettingsCard({ settings, setSettings, isAdmin }) {
         </div>
       )}
     </form>
+  )
+}
+
+function DuckDnsSettingsCard({ settings, setSettings, isAdmin }) {
+  const [subdomain, setSubdomain] = useState(settings.duckdns_subdomain || '')
+  const [token, setToken] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [updating, setUpdating] = useState(false)
+  const [updateResult, setUpdateResult] = useState(null)
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const updated = await api.put('/settings', { duckdns_subdomain: subdomain, duckdns_token: token || undefined })
+      setSettings(updated)
+      setToken('')
+      setSaved(true)
+    } catch (err) {
+      setSaveError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleUpdateNow() {
+    setUpdating(true)
+    setUpdateResult(null)
+    try {
+      const result = await api.post('/settings/duckdns/update-now', {})
+      setUpdateResult({ ok: true, message: `Pointed ${result.domain} at ${result.ip}.` })
+      setSettings((s) => ({ ...s, duckdns_last_updated_ip: result.ip, duckdns_last_updated_at: Date.now() / 1000 }))
+    } catch (err) {
+      setUpdateResult({ ok: false, message: err.message })
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold text-ink">Free remote domain (DuckDNS)</h2>
+        <p className="mt-1 text-xs text-ink-muted">
+          Optional - only worth setting up if <code className="text-ink">agenthub-....local</code> doesn't
+          resolve on your network (some guest Wi-Fi and routers block this). Not related to Google in any
+          way - this is purely about having a reliable address on networks where <code className="text-ink">.local</code> names
+          don't work. Get a free account and token at{' '}
+          <a href="https://www.duckdns.org" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            duckdns.org
+          </a>{' '}
+          (sign in with an existing Google/GitHub account, no email needed), pick any subdomain name, and
+          paste both below - the hub keeps it updated automatically from then on, checking every few
+          minutes in the background so it survives your router handing out a new IP address later.
+        </p>
+        <p className="mt-2 text-xs text-ink-muted">
+          Worth knowing: this doesn't put the hub on the public internet, or change who can reach
+          it. A DuckDNS name still points at the hub's ordinary private network address - someone
+          outside your network looking it up gets back an address that means nothing on their own
+          network. It's still just anyone on your network with a real account and password, same as
+          before - DuckDNS only gives that same group a name that resolves reliably everywhere. If
+          you specifically want to restrict access to a handful of approved devices instead,{' '}
+          <a href="https://tailscale.com" target="_blank" rel="noreferrer" className="text-copper hover:underline">
+            Tailscale
+          </a>{' '}
+          is built for that - a different tool for a different requirement.
+        </p>
+      </div>
+
+      {settings.duckdns_configured && (
+        <div className="rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <CircleCheck size={13} className="text-signal shrink-0" />
+            <span className="text-ink">
+              http://{settings.duckdns_subdomain}.duckdns.org — reachable here too now
+            </span>
+          </div>
+          {settings.duckdns_last_updated_at ? (
+            <p className="mt-1 text-ink-faint">
+              Last pointed at {settings.duckdns_last_updated_ip} ({relativeTime(settings.duckdns_last_updated_at)})
+            </p>
+          ) : (
+            <p className="mt-1 text-ink-faint">Not updated yet - click "Update now" below</p>
+          )}
+          {settings.duckdns_last_error && <p className="mt-1 text-danger">{settings.duckdns_last_error}</p>}
+        </div>
+      )}
+
+      {isAdmin && (
+        <form onSubmit={handleSave} className="space-y-3">
+          <Field label="Subdomain" hint="Just the name you picked on DuckDNS, not the full domain">
+            <div className="flex items-center gap-2">
+              <TextInput value={subdomain} onChange={(e) => setSubdomain(e.target.value)} placeholder="agenthub-a3f9c1e2" />
+              <span className="whitespace-nowrap text-xs text-ink-faint">.duckdns.org</span>
+            </div>
+          </Field>
+          <Field label="Token" hint={settings.duckdns_token_configured ? undefined : 'From your DuckDNS account page'}>
+            <div className="flex items-center gap-2">
+              <TextInput
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={settings.duckdns_token_configured ? '••••••••••••  (leave blank to keep current token)' : ''}
+              />
+              {settings.duckdns_token_configured && <Badge variant="signal"><CircleCheck size={10} className="mr-1" />Set</Badge>}
+            </div>
+          </Field>
+          {saveError && <p className="text-xs text-danger">{saveError}</p>}
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={!subdomain || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            {saved && <span className="text-xs text-signal">Saved</span>}
+          </div>
+        </form>
+      )}
+
+      {isAdmin && settings.duckdns_configured && (
+        <div className="space-y-2 border-t border-line pt-4">
+          <Button variant="secondary" size="sm" onClick={handleUpdateNow} disabled={updating}>
+            {updating ? 'Updating…' : 'Update now'}
+          </Button>
+          {updateResult && (
+            <p className={`text-xs ${updateResult.ok ? 'text-signal' : 'text-danger'}`}>{updateResult.message}</p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

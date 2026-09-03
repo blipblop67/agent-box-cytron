@@ -8,25 +8,28 @@ Two trigger types on purpose, not raw cron - "every 30 minutes" and "daily at
 9:00" cover the overwhelming majority of what someone building their first
 agent actually wants, without asking a newcomer to learn cron syntax.
 
-Also runs a fixed-interval background job checking Telegram triggers for
-new messages (see telegram_poller.py) - this is what makes "message the
-bot and get a reply, from anywhere" actually work, instead of a flow only
-ever running when someone's looking at the hub and clicks Run.
+Also runs two fixed-interval background jobs: checking Telegram triggers
+for new messages (see telegram_poller.py), and - if DuckDNS is configured
+(see dynamic_dns.py) - keeping that domain pointed at the hub's current
+LAN IP, so it survives a DHCP renewal without anyone noticing or having
+to manually update anything.
 """
 import json
 import logging
+import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import db, flow_engine, telegram_poller
+from . import db, dynamic_dns, flow_engine, hub_settings, telegram_poller
 
 logger = logging.getLogger(__name__)
 
 _scheduler = BackgroundScheduler()
 
 TELEGRAM_POLL_SECONDS = 3  # felt-instant for a chat, gentle enough not to trip Telegram's rate limits
+DUCKDNS_REFRESH_SECONDS = 300  # frequent enough to catch a DHCP renewal within minutes, gentle on DuckDNS's free service
 
 
 def start() -> None:
@@ -39,6 +42,13 @@ def start() -> None:
         replace_existing=True,
         max_instances=1,  # a slow poll (network hiccup) shouldn't stack up overlapping runs
     )
+    _scheduler.add_job(
+        _refresh_duckdns,
+        trigger=IntervalTrigger(seconds=DUCKDNS_REFRESH_SECONDS),
+        id="duckdns-refresh",
+        replace_existing=True,
+        max_instances=1,
+    )
     _scheduler.start()
 
 
@@ -47,6 +57,21 @@ def _poll_telegram_triggers() -> None:
         telegram_poller.check_all_triggers()
     except Exception:  # noqa: BLE001 - must never take the whole scheduler down
         logger.exception("Telegram trigger polling failed")
+
+
+def _refresh_duckdns() -> None:
+    creds = hub_settings.get_duckdns_credentials()
+    if creds is None:
+        return  # not configured - the overwhelming common case, nothing to do every 5 minutes
+    subdomain, token = creds
+    try:
+        result = dynamic_dns.update(subdomain, token)
+        db.set_setting("duckdns_last_updated_ip", result["ip"])
+        db.set_setting("duckdns_last_updated_at", str(time.time()))
+        db.set_setting("duckdns_last_error", "")
+    except dynamic_dns.DuckDnsError as exc:
+        db.set_setting("duckdns_last_error", str(exc))
+        logger.warning("DuckDNS refresh failed: %s", exc)
 
 
 def shutdown() -> None:

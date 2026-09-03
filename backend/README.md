@@ -136,6 +136,15 @@ Drive tool integrations. Pairs with the React frontend in
   needing to be anywhere near the hub. This is what makes a Telegram bot
   usable as an actual assistant instead of only something a flow can
   proactively message (`app/telegram_poller.py`)
+- **Free remote domain (DuckDNS)** — optional, admin-configurable in
+  Settings, for networks where `.local` resolution doesn't work (some
+  guest Wi-Fi, some routers). Paste a free DuckDNS token and subdomain,
+  and a background job (same pattern as the Telegram poller, every 5
+  minutes) keeps that domain pointed at the hub's current LAN IP, so it
+  survives a DHCP renewal without anyone noticing. Entirely unrelated to
+  Google - a service account has no redirect URI to worry about, so
+  nothing about Google integration depends on what hostname or IP the
+  hub is reachable at (`app/dynamic_dns.py`)
 - **Self-updates** — an admin points the hub at a GitHub repo/branch from
   the Settings page (that part stays admin-only - it decides which code
   the hub trusts). "Check for updates" and "Update now" themselves are
@@ -198,6 +207,7 @@ python3 tests/test_mcp_client.py   # The MCP client against both response transp
 python3 tests/test_mcp_node.py   # An MCP node working end to end inside a real flow
 python3 tests/test_mcp_server.py   # A published flow's MCP endpoint - full JSON-RPC handshake, auth, errors
 python3 tests/test_sirim_template.py   # The SIRIM template's 9-column schema, end to end through the real graph
+python3 tests/test_dynamic_dns.py   # DuckDNS - saving credentials, and the background job surviving a simulated IP change
 python3 tests/test_calendar.py   # Calendar via the service account, listing/creating events, and using both from a flow
 python3 tests/test_sheets.py   # The upsert behavior a real progress tracker needs, via the service account
 python3 tests/test_service_account_impersonation.py   # The full SIRIM scenario - real JWT, signature independently verified
@@ -593,6 +603,30 @@ is that someone learning the system can see exactly what happened at each
 node, not just a final answer.
 
 ## Design notes / why it's built this way
+
+- **DuckDNS came back as a standalone network-reachability feature, not
+  the OAuth workaround it originally was.** It existed once already, in
+  this codebase's history, specifically to satisfy Google's OAuth
+  redirect-URI rules - removed entirely when Google auth moved to a
+  service account, which has no redirect URI at all and so no longer
+  cares what hostname or IP the hub is reachable at. It's back now for a
+  genuinely different, unrelated reason: some networks (guest Wi-Fi,
+  certain routers, some enterprise setups) block mDNS/`.local`
+  resolution outright, and a real DNS name resolves everywhere normal
+  DNS works. Deliberately opt-in and customer-configurable (a Settings
+  card, not baked into the golden image or required at manufacturing
+  time) - each customer who actually hits an mDNS problem sets up their
+  own free account and turns it on themselves; everyone else never sees
+  it. `dynamic_dns.py`'s core logic (the DuckDNS API call, LAN IP
+  detection, the background refresh job surviving a DHCP renewal) is
+  unchanged from the original implementation - that part was already
+  correct, the only thing that changed is what it's *for*.
+- **Verified past the point of trusting the mocked tests**: after
+  building the Settings card, ran the actual save-and-update flow
+  through a real browser against a real (deliberately fake) DuckDNS
+  token, letting the request genuinely reach `duckdns.org` and come back
+  rejected - confirming the whole chain end to end, not just that each
+  piece looks right in isolation.
 
 - **A Google AI Studio sample app of the same SIRIM tracker concept was a
   genuinely useful reference for *what to track*, not *how to

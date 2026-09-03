@@ -20,6 +20,7 @@ DEFAULTS = {
     "smtp_username": "",
     "smtp_from_address": "",
     "smtp_use_tls": "true",               # "true" -> STARTTLS on smtp_port (587 typical); "false" -> implicit TLS (465 typical)
+    "duckdns_subdomain": "",
 }
 
 
@@ -45,6 +46,12 @@ def get_settings() -> dict:
             )["client_email"]
         except service_account_auth.ServiceAccountError:
             pass  # a corrupted stored key shouldn't crash the settings page - just shows blank
+    settings["duckdns_token_configured"] = db.get_setting("duckdns_token_encrypted") is not None
+    settings["duckdns_configured"] = bool(settings["duckdns_subdomain"]) and settings["duckdns_token_configured"]
+    settings["duckdns_last_updated_ip"] = db.get_setting("duckdns_last_updated_ip") or ""
+    last_updated_at = db.get_setting("duckdns_last_updated_at")
+    settings["duckdns_last_updated_at"] = float(last_updated_at) if last_updated_at else None
+    settings["duckdns_last_error"] = db.get_setting("duckdns_last_error") or ""
     return settings
 
 
@@ -54,7 +61,8 @@ def update_settings(*, hub_name: str | None = None, llm_provider: str | None = N
                      youtube_api_key: str | None = None, smtp_host: str | None = None,
                      smtp_port: str | None = None, smtp_username: str | None = None,
                      smtp_password: str | None = None, smtp_from_address: str | None = None,
-                     smtp_use_tls: bool | None = None, google_service_account_key: str | None = None) -> None:
+                     smtp_use_tls: bool | None = None, google_service_account_key: str | None = None,
+                     duckdns_subdomain: str | None = None, duckdns_token: str | None = None) -> None:
     if hub_name is not None:
         db.set_setting("hub_name", hub_name.strip()[:60])  # a short label, not a paragraph
     if llm_provider is not None:
@@ -86,6 +94,10 @@ def update_settings(*, hub_name: str | None = None, llm_provider: str | None = N
     if google_service_account_key:  # only overwrite if a new one was actually provided
         service_account_auth.parse_key(google_service_account_key)  # raises a clear error before storing garbage
         db.set_setting("google_service_account_key_encrypted", crypto_vault.encrypt(google_service_account_key).decode())
+    if duckdns_subdomain is not None:
+        db.set_setting("duckdns_subdomain", duckdns_subdomain)
+    if duckdns_token:  # only overwrite if a new one was actually provided
+        db.set_setting("duckdns_token_encrypted", crypto_vault.encrypt(duckdns_token).decode())
 
 
 def get_openrouter_api_key() -> str | None:
@@ -132,3 +144,14 @@ def get_service_account_key() -> dict | None:
     if stored is None:
         return None
     return service_account_auth.parse_key(crypto_vault.decrypt(stored.encode()))
+
+
+def get_duckdns_credentials() -> tuple[str, str] | None:
+    """(subdomain, token), or None if DuckDNS hasn't been set up - the one
+    thing scheduler.py's periodic refresh job and the manual "update now"
+    endpoint both need before calling dynamic_dns.update()."""
+    subdomain = db.get_setting("duckdns_subdomain")
+    token_enc = db.get_setting("duckdns_token_encrypted")
+    if not subdomain or not token_enc:
+        return None
+    return subdomain, crypto_vault.decrypt(token_enc.encode())

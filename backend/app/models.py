@@ -173,6 +173,12 @@ class SettingsOut(BaseModel):
     smtp_use_tls: bool
     smtp_password_configured: bool
     smtp_configured: bool
+    duckdns_subdomain: str
+    duckdns_token_configured: bool
+    duckdns_configured: bool
+    duckdns_last_updated_ip: str
+    duckdns_last_updated_at: float | None
+    duckdns_last_error: str
 
 
 class SettingsUpdate(BaseModel):
@@ -191,6 +197,8 @@ class SettingsUpdate(BaseModel):
     smtp_from_address: str | None = None
     smtp_use_tls: bool | None = None
     google_service_account_key: str | None = None
+    duckdns_subdomain: str | None = None
+    duckdns_token: str | None = None
 
 
 class TestImpersonationRequest(BaseModel):

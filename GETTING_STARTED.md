@@ -648,7 +648,14 @@ through the browser.
    there directly instead, e.g. `http://192.168.1.42:8811`.
 5. Some networks (especially "guest" Wi-Fi, or certain routers) block the
    `.local` address style entirely, even once you have the right name —
-   the IP address from step 4 always works as a fallback.
+   the IP address from step 4 always works as a fallback, though it can
+   change after a reboot if your router doesn't reserve it. If this is a
+   recurring problem on your specific network rather than a one-time
+   thing, **Settings → "Free remote domain (DuckDNS)"** gives the hub a
+   real address that works the same way on every network — a free
+   account, once, and the hub keeps it updated automatically from then
+   on. Nothing to do with Google or any other integration — purely about
+   having a reliable address.
 6. If none of that gets you in, try power-cycling it — unplug for 10
    seconds, plug back in, wait a minute.
 6. Still nothing? That's a support question, not something to keep
@@ -709,6 +716,7 @@ Read the node it names; the fix is almost always right there.
 |---|---|
 | LLM provider | OpenRouter API key + model, or Ollama base URL + model |
 | Google integration | Service account JSON key |
+| Free remote domain (DuckDNS) | Subdomain, token — optional, unrelated to Google |
 | Web search | Tavily API key |
 | YouTube search | YouTube API key |
 | Outgoing email | SMTP host, port, username, password, from address, TLS |
