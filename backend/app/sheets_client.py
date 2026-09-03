@@ -9,12 +9,15 @@ regenerating the whole file, just updating one row, the same way a person
 would.
 
 Authenticates entirely through the hub-wide Google service account (see
-service_account_auth.py). `impersonate` left blank means the spreadsheet
-is created in/read from the service account's *own* Drive space - a
-completely normal way to use this for a dedicated tracker nobody else
-needs personal ownership of. Setting `impersonate` to a Workspace address
-instead makes it land in that person's own Drive (needs domain-wide
-delegation authorized for the Sheets scope).
+service_account_auth.py) by default. `impersonate` left blank means the
+spreadsheet is created in/read from the service account's *own* Drive
+space - a completely normal way to use this for a dedicated tracker
+nobody else needs personal ownership of. Setting `impersonate` to a
+Workspace address instead makes it land in that person's own Drive
+(needs domain-wide delegation authorized for the Sheets scope). An
+`access_token` (Path B - a resolved per-user OAuth token) bypasses the
+service account entirely when a node is configured to act as a specific
+person's own Google account instead.
 """
 import httpx
 
@@ -29,7 +32,9 @@ class SheetsError(Exception):
     pass
 
 
-def _headers(impersonate: str | None = None) -> dict:
+def _headers(impersonate: str | None = None, access_token: str | None = None) -> dict:
+    if access_token:
+        return {"Authorization": f"Bearer {access_token}"}
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
         raise SheetsError("Sheets isn't configured yet - add a Google service account key on the Settings page")
@@ -52,10 +57,10 @@ def _handle_error(resp: httpx.Response, context: str) -> None:
 
 
 def create_spreadsheet(title: str, headers: list[str] | None = None, sheet_name: str = "Sheet1",
-                        *, impersonate: str | None = None) -> dict:
+                        *, impersonate: str | None = None, access_token: str | None = None) -> dict:
     resp = httpx.post(
         API_BASE,
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         json={"properties": {"title": title}, "sheets": [{"properties": {"title": sheet_name}}]},
         timeout=30,
     )
@@ -65,8 +70,8 @@ def create_spreadsheet(title: str, headers: list[str] | None = None, sheet_name:
     sheet_id = data["sheets"][0]["properties"]["sheetId"]
 
     if headers:
-        update_row_at(spreadsheet_id, sheet_name, row_number=1, values=headers, impersonate=impersonate)
-        _format_header_row(spreadsheet_id, sheet_id, len(headers), impersonate=impersonate)
+        update_row_at(spreadsheet_id, sheet_name, row_number=1, values=headers, impersonate=impersonate, access_token=access_token)
+        _format_header_row(spreadsheet_id, sheet_id, len(headers), impersonate=impersonate, access_token=access_token)
 
     return {
         "spreadsheet_id": spreadsheet_id,
@@ -75,7 +80,8 @@ def create_spreadsheet(title: str, headers: list[str] | None = None, sheet_name:
     }
 
 
-def _format_header_row(spreadsheet_id: str, sheet_id: int, column_count: int, *, impersonate: str | None = None) -> None:
+def _format_header_row(spreadsheet_id: str, sheet_id: int, column_count: int, *, impersonate: str | None = None,
+                        access_token: str | None = None) -> None:
     """Bold white text on a dark background, frozen so it stays visible while
     scrolling - the same basic treatment any well-made tracker sheet gets by
     hand, just applied automatically. Purely cosmetic - never raises even if
@@ -101,26 +107,27 @@ def _format_header_row(spreadsheet_id: str, sheet_id: int, column_count: int, *,
         ],
     }
     try:
-        resp = httpx.post(f"{API_BASE}/{spreadsheet_id}:batchUpdate", headers=_headers(impersonate), json=body, timeout=30)
+        resp = httpx.post(f"{API_BASE}/{spreadsheet_id}:batchUpdate", headers=_headers(impersonate, access_token), json=body, timeout=30)
         resp.raise_for_status()
     except httpx.HTTPError:
         pass  # cosmetic only - a flow's Create action should still succeed even if styling fails
 
 
-def read_rows(spreadsheet_id: str, sheet_name: str = "Sheet1", *, impersonate: str | None = None) -> list[list[str]]:
-    resp = httpx.get(f"{API_BASE}/{spreadsheet_id}/values/{sheet_name}", headers=_headers(impersonate), timeout=30)
+def read_rows(spreadsheet_id: str, sheet_name: str = "Sheet1", *, impersonate: str | None = None,
+               access_token: str | None = None) -> list[list[str]]:
+    resp = httpx.get(f"{API_BASE}/{spreadsheet_id}/values/{sheet_name}", headers=_headers(impersonate, access_token), timeout=30)
     _handle_error(resp, "read")
     return resp.json().get("values", [])
 
 
 def update_row_at(spreadsheet_id: str, sheet_name: str, row_number: int, values: list[str],
-                   *, impersonate: str | None = None) -> None:
+                   *, impersonate: str | None = None, access_token: str | None = None) -> None:
     """row_number is 1-indexed, matching how a person would talk about "row 3"."""
     end_col = chr(ord("A") + len(values) - 1) if len(values) <= 26 else "Z"
     range_ = f"{sheet_name}!A{row_number}:{end_col}{row_number}"
     resp = httpx.put(
         f"{API_BASE}/{spreadsheet_id}/values/{range_}",
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         params={"valueInputOption": "USER_ENTERED"},
         json={"values": [values]},
         timeout=30,
@@ -129,10 +136,10 @@ def update_row_at(spreadsheet_id: str, sheet_name: str, row_number: int, values:
 
 
 def append_row(spreadsheet_id: str, sheet_name: str, values: list[str],
-                *, impersonate: str | None = None) -> None:
+                *, impersonate: str | None = None, access_token: str | None = None) -> None:
     resp = httpx.post(
         f"{API_BASE}/{spreadsheet_id}/values/{sheet_name}!A:Z:append",
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         params={"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"},
         json={"values": [values]},
         timeout=30,
@@ -141,7 +148,7 @@ def append_row(spreadsheet_id: str, sheet_name: str, values: list[str],
 
 
 def upsert_row(spreadsheet_id: str, sheet_name: str, values: list[str],
-                *, impersonate: str | None = None) -> dict:
+                *, impersonate: str | None = None, access_token: str | None = None) -> dict:
     """values[0] is the key - if a row already has that value in column A,
     that row is updated in place; otherwise a new row is appended. This is
     the whole point: calling this repeatedly with the same key keeps
@@ -149,13 +156,13 @@ def upsert_row(spreadsheet_id: str, sheet_name: str, values: list[str],
     if not values:
         raise SheetsError("Nothing to write - no values given")
     key = values[0]
-    existing_rows = read_rows(spreadsheet_id, sheet_name, impersonate=impersonate)
+    existing_rows = read_rows(spreadsheet_id, sheet_name, impersonate=impersonate, access_token=access_token)
 
     for i, row in enumerate(existing_rows):
         if row and row[0] == key:
             row_number = i + 1  # 1-indexed
-            update_row_at(spreadsheet_id, sheet_name, row_number, values, impersonate=impersonate)
+            update_row_at(spreadsheet_id, sheet_name, row_number, values, impersonate=impersonate, access_token=access_token)
             return {"action": "updated", "row": row_number, "key": key}
 
-    append_row(spreadsheet_id, sheet_name, values, impersonate=impersonate)
+    append_row(spreadsheet_id, sheet_name, values, impersonate=impersonate, access_token=access_token)
     return {"action": "appended", "row": len(existing_rows) + 1, "key": key}

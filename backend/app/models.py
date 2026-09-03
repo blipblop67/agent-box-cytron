@@ -179,6 +179,8 @@ class SettingsOut(BaseModel):
     duckdns_last_updated_ip: str
     duckdns_last_updated_at: float | None
     duckdns_last_error: str
+    google_oauth_client_id: str
+    google_oauth_client_secret_configured: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -199,6 +201,8 @@ class SettingsUpdate(BaseModel):
     google_service_account_key: str | None = None
     duckdns_subdomain: str | None = None
     duckdns_token: str | None = None
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: str | None = None
 
 
 class TestImpersonationRequest(BaseModel):

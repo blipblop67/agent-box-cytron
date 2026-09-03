@@ -21,6 +21,7 @@ DEFAULTS = {
     "smtp_from_address": "",
     "smtp_use_tls": "true",               # "true" -> STARTTLS on smtp_port (587 typical); "false" -> implicit TLS (465 typical)
     "duckdns_subdomain": "",
+    "google_oauth_client_id": "",
 }
 
 
@@ -52,6 +53,7 @@ def get_settings() -> dict:
     last_updated_at = db.get_setting("duckdns_last_updated_at")
     settings["duckdns_last_updated_at"] = float(last_updated_at) if last_updated_at else None
     settings["duckdns_last_error"] = db.get_setting("duckdns_last_error") or ""
+    settings["google_oauth_client_secret_configured"] = db.get_setting("google_oauth_client_secret_encrypted") is not None
     return settings
 
 
@@ -62,7 +64,8 @@ def update_settings(*, hub_name: str | None = None, llm_provider: str | None = N
                      smtp_port: str | None = None, smtp_username: str | None = None,
                      smtp_password: str | None = None, smtp_from_address: str | None = None,
                      smtp_use_tls: bool | None = None, google_service_account_key: str | None = None,
-                     duckdns_subdomain: str | None = None, duckdns_token: str | None = None) -> None:
+                     duckdns_subdomain: str | None = None, duckdns_token: str | None = None,
+                     google_oauth_client_id: str | None = None, google_oauth_client_secret: str | None = None) -> None:
     if hub_name is not None:
         db.set_setting("hub_name", hub_name.strip()[:60])  # a short label, not a paragraph
     if llm_provider is not None:
@@ -98,6 +101,10 @@ def update_settings(*, hub_name: str | None = None, llm_provider: str | None = N
         db.set_setting("duckdns_subdomain", duckdns_subdomain)
     if duckdns_token:  # only overwrite if a new one was actually provided
         db.set_setting("duckdns_token_encrypted", crypto_vault.encrypt(duckdns_token).decode())
+    if google_oauth_client_id is not None:
+        db.set_setting("google_oauth_client_id", google_oauth_client_id)
+    if google_oauth_client_secret:  # only overwrite if a new one was actually provided
+        db.set_setting("google_oauth_client_secret_encrypted", crypto_vault.encrypt(google_oauth_client_secret).decode())
 
 
 def get_openrouter_api_key() -> str | None:
@@ -155,3 +162,16 @@ def get_duckdns_credentials() -> tuple[str, str] | None:
     if not subdomain or not token_enc:
         return None
     return subdomain, crypto_vault.decrypt(token_enc.encode())
+
+
+def get_google_oauth_client() -> tuple[str | None, str | None]:
+    """(client_id, client_secret) for this hub's own Google Cloud project -
+    one per customer, same as the service account key is one per hub.
+    Either half may be None if OAuth hasn't been set up; callers check for
+    that themselves rather than this raising, since "not configured yet"
+    is the default, expected state for most hubs."""
+    client_id = db.get_setting("google_oauth_client_id")
+    secret_enc = db.get_setting("google_oauth_client_secret_encrypted")
+    secret = crypto_vault.decrypt(secret_enc.encode()) if secret_enc else None
+    return client_id, secret
+

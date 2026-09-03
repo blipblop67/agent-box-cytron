@@ -42,7 +42,12 @@ class DriveError(Exception):
     pass
 
 
-def _headers(impersonate: str | None = None) -> dict:
+def _headers(impersonate: str | None = None, access_token: str | None = None) -> dict:
+    """access_token, when given, is a resolved per-user OAuth token (Path B),
+    used directly, bypassing the service account entirely. Unset is the
+    default, unchanged path: the hub-wide service account."""
+    if access_token:
+        return {"Authorization": f"Bearer {access_token}"}
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
         raise DriveError("Drive isn't configured yet - add a Google service account key on the Settings page")
@@ -70,14 +75,15 @@ def _handle_error(resp: httpx.Response, impersonate: str | None, context: str) -
     raise DriveError(f"Drive rejected this ({context} as '{impersonate}'): {detail}")
 
 
-def list_files(search: str = "", max_results: int = 20, *, impersonate: str | None = None) -> list[dict]:
+def list_files(search: str = "", max_results: int = 20, *, impersonate: str | None = None,
+                access_token: str | None = None) -> list[dict]:
     query = "trashed = false"
     if search:
         escaped = search.replace("'", "\\'")
         query = f"name contains '{escaped}' and trashed = false"
     resp = httpx.get(
         f"{API_BASE}/files",
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         params={"q": query, "pageSize": max_results, "fields": f"files({FIELDS})"},
         timeout=30,
     )
@@ -85,10 +91,10 @@ def list_files(search: str = "", max_results: int = 20, *, impersonate: str | No
     return resp.json().get("files", [])
 
 
-def get_file_metadata(file_id: str, *, impersonate: str | None = None) -> dict:
+def get_file_metadata(file_id: str, *, impersonate: str | None = None, access_token: str | None = None) -> dict:
     resp = httpx.get(
         f"{API_BASE}/files/{file_id}",
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         params={"fields": FIELDS},
         timeout=30,
     )
@@ -96,26 +102,26 @@ def get_file_metadata(file_id: str, *, impersonate: str | None = None) -> dict:
     return resp.json()
 
 
-def read_file_content(file_id: str, *, impersonate: str | None = None) -> dict:
+def read_file_content(file_id: str, *, impersonate: str | None = None, access_token: str | None = None) -> dict:
     """Returns {"name", "mime_type", "content"} with content always as text -
     good enough for feeding into a prompt or a RAG ingestion step. Binary
     files (images, etc.) aren't meaningfully "read" this way; this is aimed
     at docs, sheets, and plain text/CSV files."""
-    meta = get_file_metadata(file_id, impersonate=impersonate)
+    meta = get_file_metadata(file_id, impersonate=impersonate, access_token=access_token)
     mime_type = meta["mimeType"]
 
     if mime_type in _EXPORT_MIME_MAP:
         export_mime = _EXPORT_MIME_MAP[mime_type]
         resp = httpx.get(
             f"{API_BASE}/files/{file_id}/export",
-            headers=_headers(impersonate),
+            headers=_headers(impersonate, access_token),
             params={"mimeType": export_mime},
             timeout=30,
         )
     else:
         resp = httpx.get(
             f"{API_BASE}/files/{file_id}",
-            headers=_headers(impersonate),
+            headers=_headers(impersonate, access_token),
             params={"alt": "media"},
             timeout=30,
         )
@@ -124,7 +130,8 @@ def read_file_content(file_id: str, *, impersonate: str | None = None) -> dict:
 
 
 def create_file(name: str, content: str, mime_type: str = "text/plain",
-                 folder_id: str | None = None, *, impersonate: str | None = None) -> dict:
+                 folder_id: str | None = None, *, impersonate: str | None = None,
+                 access_token: str | None = None) -> dict:
     """Two calls rather than one hand-built multipart/related body: create the
     metadata first, then PATCH the content in. Slightly more traffic, a lot
     more readable than constructing Drive's multipart upload format by hand."""
@@ -134,7 +141,7 @@ def create_file(name: str, content: str, mime_type: str = "text/plain",
 
     create_resp = httpx.post(
         f"{API_BASE}/files",
-        headers={**_headers(impersonate), "Content-Type": "application/json"},
+        headers={**_headers(impersonate, access_token), "Content-Type": "application/json"},
         json=metadata,
         params={"fields": FIELDS},
         timeout=30,
@@ -142,14 +149,14 @@ def create_file(name: str, content: str, mime_type: str = "text/plain",
     _handle_error(create_resp, impersonate, "creating a file")
     file_id = create_resp.json()["id"]
 
-    return update_file_content(file_id, content, mime_type=mime_type, impersonate=impersonate)
+    return update_file_content(file_id, content, mime_type=mime_type, impersonate=impersonate, access_token=access_token)
 
 
 def update_file_content(file_id: str, content: str, mime_type: str = "text/plain",
-                         *, impersonate: str | None = None) -> dict:
+                         *, impersonate: str | None = None, access_token: str | None = None) -> dict:
     resp = httpx.patch(
         f"{UPLOAD_BASE}/files/{file_id}",
-        headers={**_headers(impersonate), "Content-Type": mime_type},
+        headers={**_headers(impersonate, access_token), "Content-Type": mime_type},
         params={"uploadType": "media", "fields": FIELDS},
         content=content.encode(),
         timeout=30,

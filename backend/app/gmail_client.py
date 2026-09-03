@@ -33,7 +33,15 @@ class GmailError(Exception):
     pass
 
 
-def _headers(impersonate: str | None = None) -> dict:
+def _headers(impersonate: str | None = None, access_token: str | None = None) -> dict:
+    """access_token, when given, is a resolved per-user OAuth token (Path B -
+    see google_tokens.py) and is used directly, bypassing the service
+    account entirely - the flow engine resolves this before calling in,
+    based on the node's own auth_mode setting. Leaving it unset is the
+    default, unchanged path: the hub-wide service account, optionally
+    impersonating someone via domain-wide delegation."""
+    if access_token:
+        return {"Authorization": f"Bearer {access_token}"}
     key_info = hub_settings.get_service_account_key()
     if key_info is None:
         raise GmailError("Gmail isn't configured yet - add a Google service account key on the Settings page")
@@ -71,7 +79,8 @@ def _b64url_decode(data: str) -> str:
 
 def send_email(to: str, subject: str, body: str, *,
                 thread_id: str | None = None, in_reply_to: str | None = None,
-                references: str | None = None, impersonate: str | None = None) -> dict:
+                references: str | None = None, impersonate: str | None = None,
+                access_token: str | None = None) -> dict:
     msg = MIMEText(body)
     msg["To"] = to
     msg["Subject"] = subject
@@ -84,27 +93,28 @@ def send_email(to: str, subject: str, body: str, *,
     if thread_id:
         payload["threadId"] = thread_id
 
-    resp = httpx.post(f"{API_BASE}/messages/send", headers=_headers(impersonate), json=payload, timeout=30)
+    resp = httpx.post(f"{API_BASE}/messages/send", headers=_headers(impersonate, access_token), json=payload, timeout=30)
     _handle_error(resp, impersonate, "sending an email")
     return resp.json()
 
 
-def list_messages(query: str = "", max_results: int = 10, *, impersonate: str | None = None) -> list[dict]:
+def list_messages(query: str = "", max_results: int = 10, *, impersonate: str | None = None,
+                   access_token: str | None = None) -> list[dict]:
     """Cheap listing: headers + snippet only (format=metadata), not the full body -
     good for scanning an inbox without pulling every message's full content."""
     params = {"maxResults": max_results}
     if query:
         params["q"] = query
-    resp = httpx.get(f"{API_BASE}/messages", headers=_headers(impersonate), params=params, timeout=30)
+    resp = httpx.get(f"{API_BASE}/messages", headers=_headers(impersonate, access_token), params=params, timeout=30)
     _handle_error(resp, impersonate, "listing messages")
     ids = [m["id"] for m in resp.json().get("messages", [])]
-    return [_get_message_metadata(mid, impersonate) for mid in ids]
+    return [_get_message_metadata(mid, impersonate, access_token) for mid in ids]
 
 
-def _get_message_metadata(message_id: str, impersonate: str | None = None) -> dict:
+def _get_message_metadata(message_id: str, impersonate: str | None = None, access_token: str | None = None) -> dict:
     resp = httpx.get(
         f"{API_BASE}/messages/{message_id}",
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"]},
         timeout=30,
     )
@@ -112,12 +122,12 @@ def _get_message_metadata(message_id: str, impersonate: str | None = None) -> di
     return _parse_message(resp.json(), include_body=False)
 
 
-def get_message(message_id: str, *, impersonate: str | None = None) -> dict:
+def get_message(message_id: str, *, impersonate: str | None = None, access_token: str | None = None) -> dict:
     """Full read: headers plus the plain-text body, for when an agent actually
     needs to read what an email says, not just its subject line."""
     resp = httpx.get(
         f"{API_BASE}/messages/{message_id}",
-        headers=_headers(impersonate),
+        headers=_headers(impersonate, access_token),
         params={"format": "full"},
         timeout=30,
     )
@@ -125,8 +135,9 @@ def get_message(message_id: str, *, impersonate: str | None = None) -> dict:
     return _parse_message(resp.json(), include_body=True)
 
 
-def reply_to_message(message_id: str, body: str, *, impersonate: str | None = None) -> dict:
-    original = get_message(message_id, impersonate=impersonate)
+def reply_to_message(message_id: str, body: str, *, impersonate: str | None = None,
+                      access_token: str | None = None) -> dict:
+    original = get_message(message_id, impersonate=impersonate, access_token=access_token)
     to_address = parseaddr(original["from"])[1]
     subject = original["subject"] or ""
     if not subject.lower().startswith("re:"):
@@ -136,7 +147,7 @@ def reply_to_message(message_id: str, body: str, *, impersonate: str | None = No
         thread_id=original["thread_id"],
         in_reply_to=original["message_id_header"],
         references=original["message_id_header"],
-        impersonate=impersonate,
+        impersonate=impersonate, access_token=access_token,
     )
 
 
