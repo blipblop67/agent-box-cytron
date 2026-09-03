@@ -188,11 +188,59 @@ function ImpersonateField({ data, patch }) {
   )
 }
 
+function AuthModeField({ data, patch, service, serviceLabel }) {
+  const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
+  const googleOAuthConfigured = useCatalogStore((s) => s.googleOAuthConfigured)
+  const connection = useCatalogStore((s) => s.googleConnections[service])
+  const authMode = data.auth_mode === 'oauth' ? 'oauth' : 'service_account'
+
+  // Both available - let the person choose which identity this node acts as.
+  if (serviceAccountConfigured && googleOAuthConfigured) {
+    return (
+      <>
+        <Field label="Acts as">
+          <Select value={authMode} onChange={(e) => patch({ auth_mode: e.target.value })}>
+            <option value="service_account">The hub-wide service account</option>
+            <option value="oauth">My own Google account</option>
+          </Select>
+        </Field>
+        {authMode === 'oauth' ? <OwnConnectionHint connection={connection} serviceLabel={serviceLabel} /> : <ImpersonateField data={data} patch={patch} />}
+      </>
+    )
+  }
+
+  // Only OAuth is set up - no service account to fall back to, so this node
+  // always acts as the person's own connection, nothing to choose.
+  if (googleOAuthConfigured) {
+    return <OwnConnectionHint connection={connection} serviceLabel={serviceLabel} />
+  }
+
+  // Only the service account is set up (or neither) - unchanged from before
+  // OAuth mode existed at all.
+  return <ImpersonateField data={data} patch={patch} />
+}
+
+function OwnConnectionHint({ connection, serviceLabel }) {
+  if (connection?.connected) {
+    return (
+      <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+        Acts as you - connected as {connection.account_email}
+      </p>
+    )
+  }
+  return (
+    <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
+      Your own {serviceLabel} isn't connected yet. <Link to="/connections" className="text-copper hover:underline">Connect it</Link>.
+    </p>
+  )
+}
+
 function EmailFields({ data, patch }) {
   const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
+  const googleOAuthConfigured = useCatalogStore((s) => s.googleOAuthConfigured)
   return (
     <>
-      {!serviceAccountConfigured && (
+      {!serviceAccountConfigured && !googleOAuthConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
           Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
@@ -225,13 +273,14 @@ function EmailFields({ data, patch }) {
           </Field>
         </>
       )}
-      <ImpersonateField data={data} patch={patch} />
+      <AuthModeField data={data} patch={patch} service="email" serviceLabel="Gmail" />
     </>
   )
 }
 
 function DriveFields({ data, patch }) {
   const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
+  const googleOAuthConfigured = useCatalogStore((s) => s.googleOAuthConfigured)
   const [search, setSearch] = useState('')
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
@@ -249,7 +298,7 @@ function DriveFields({ data, patch }) {
 
   return (
     <>
-      {!serviceAccountConfigured && (
+      {!serviceAccountConfigured && !googleOAuthConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
           Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
@@ -322,17 +371,18 @@ function DriveFields({ data, patch }) {
           </Field>
         </>
       )}
-      <ImpersonateField data={data} patch={patch} />
+      <AuthModeField data={data} patch={patch} service="drive" serviceLabel="Drive" />
     </>
   )
 }
 
 function CalendarFields({ data, patch }) {
   const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
+  const googleOAuthConfigured = useCatalogStore((s) => s.googleOAuthConfigured)
 
   return (
     <>
-      {!serviceAccountConfigured && (
+      {!serviceAccountConfigured && !googleOAuthConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
           Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
@@ -375,17 +425,18 @@ function CalendarFields({ data, patch }) {
           </Field>
         </>
       )}
-      <ImpersonateField data={data} patch={patch} />
+      <AuthModeField data={data} patch={patch} service="calendar" serviceLabel="Calendar" />
     </>
   )
 }
 
 function SheetsFields({ data, patch }) {
   const serviceAccountConfigured = useCatalogStore((s) => s.serviceAccountConfigured)
+  const googleOAuthConfigured = useCatalogStore((s) => s.googleOAuthConfigured)
 
   return (
     <>
-      {!serviceAccountConfigured && (
+      {!serviceAccountConfigured && !googleOAuthConfigured && (
         <p className="rounded-md border border-line-strong bg-surface-raised px-2.5 py-2 text-[11px] text-ink-muted">
           Not configured yet. <Link to="/settings" className="text-copper hover:underline">Add a Google service account</Link>.
         </p>
@@ -429,7 +480,7 @@ function SheetsFields({ data, patch }) {
           )}
         </>
       )}
-      <ImpersonateField data={data} patch={patch} />
+      <AuthModeField data={data} patch={patch} service="sheets" serviceLabel="Sheets" />
     </>
   )
 }
