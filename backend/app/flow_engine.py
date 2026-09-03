@@ -10,8 +10,9 @@ learning the system exactly what happened at each step, not just a final answer.
 """
 import json
 
-from . import calculator, calendar_client, db, drive_client, gmail_client, llm_provider, mcp_client, sheets_client, \
-    telegram_client, telegram_tokens, user_settings, vector_store, web_search_client, youtube_client
+from . import calculator, calendar_client, calendar_tokens, db, drive_client, drive_tokens, gmail_client, \
+    gmail_tokens, llm_provider, mcp_client, sheets_client, sheets_tokens, telegram_client, telegram_tokens, \
+    user_settings, vector_store, web_search_client, youtube_client
 from .embeddings import get_embedding_provider
 
 
@@ -192,8 +193,28 @@ def _execute_node(node_type: str, data: dict, node_input: str, run_input: str, u
     raise ValueError(f"Unknown node type '{node_type}'")
 
 
+def _resolve_google_auth(data: dict, user_id: str, tokens_module) -> dict:
+    """Decides which of the two Google auth models a node actually uses for
+    this call, from its own auth_mode field. Returns kwargs to splat into
+    the client call - either {"impersonate": ...} (the default, unchanged
+    service-account path) or {"access_token": ...} (Path B - the running
+    user's own personal OAuth connection for this exact service, resolved
+    fresh on every call the same way the service account path already
+    re-authenticates on every call rather than caching)."""
+    if data.get("auth_mode") == "oauth":
+        try:
+            access_token = tokens_module.get_valid_access_token(user_id)
+        except LookupError as exc:
+            raise ValueError(
+                f"This node is set to use your own Google account, but it isn't connected yet - "
+                f"go to Connections and connect it, or switch this node back to the service account. ({exc})"
+            ) from exc
+        return {"access_token": access_token}
+    return {"impersonate": data.get("impersonate") or None}
+
+
 def _execute_email_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
-    impersonate = data.get("impersonate") or None
+    auth = _resolve_google_auth(data, user_id, gmail_tokens)
     action = data.get("action", "send")
     try:
         if action == "send":
@@ -202,12 +223,12 @@ def _execute_email_node(data: dict, node_input: str, run_input: str, user_id: st
                 raise ValueError("This Email node has no recipient configured")
             subject = data.get("subject") or "(no subject)"
             body = node_input or data.get("body") or run_input
-            result = gmail_client.send_email(to=to, subject=subject, body=body, impersonate=impersonate)
+            result = gmail_client.send_email(to=to, subject=subject, body=body, **auth)
             return f"Sent to {to} (message id: {result.get('id')})"
         if action == "search":
             query = data.get("query") or node_input or run_input
             messages = gmail_client.list_messages(
-                query=query, max_results=data.get("max_results") or 5, impersonate=impersonate,
+                query=query, max_results=data.get("max_results") or 5, **auth,
             )
             if not messages:
                 return "(no matching emails found)"
@@ -218,12 +239,12 @@ def _execute_email_node(data: dict, node_input: str, run_input: str, user_id: st
 
 
 def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
-    impersonate = data.get("impersonate") or None
+    auth = _resolve_google_auth(data, user_id, drive_tokens)
     action = data.get("action", "list")
     try:
         if action == "list":
             search = data.get("search") or node_input or run_input
-            files = drive_client.list_files(search=search, max_results=data.get("max_results") or 10, impersonate=impersonate)
+            files = drive_client.list_files(search=search, max_results=data.get("max_results") or 10, **auth)
             if not files:
                 return "(no matching files found)"
             return "\n".join(f"{f['name']} ({f['mimeType']}) - id: {f['id']}" for f in files)
@@ -231,13 +252,13 @@ def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: st
             file_id = data.get("file_id")
             if not file_id:
                 raise ValueError("This Drive node has no file selected to read")
-            result = drive_client.read_file_content(file_id, impersonate=impersonate)
+            result = drive_client.read_file_content(file_id, **auth)
             return result["content"]
         if action == "create":
             name = data.get("name") or "agent-output.txt"
             content = node_input or data.get("content") or run_input
             result = drive_client.create_file(name=name, content=content,
-                                               mime_type=data.get("mime_type") or "text/plain", impersonate=impersonate)
+                                               mime_type=data.get("mime_type") or "text/plain", **auth)
             return f"Created '{result['name']}' (id: {result['id']})"
     except drive_client.DriveError as exc:
         raise ValueError(str(exc)) from exc
@@ -245,11 +266,11 @@ def _execute_drive_node(data: dict, node_input: str, run_input: str, user_id: st
 
 
 def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
-    impersonate = data.get("impersonate") or None
+    auth = _resolve_google_auth(data, user_id, calendar_tokens)
     action = data.get("action", "list")
     try:
         if action == "list":
-            events = calendar_client.list_events(max_results=data.get("max_results") or 10, impersonate=impersonate)
+            events = calendar_client.list_events(max_results=data.get("max_results") or 10, **auth)
             if not events:
                 return "(no upcoming events found)"
             lines = []
@@ -271,7 +292,7 @@ def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id:
             result = calendar_client.create_event(
                 summary=summary, start=start, end=end,
                 description=description, location=data.get("location") or "",
-                timezone_name=data.get("timezone_name") or "UTC", attendees=attendees, impersonate=impersonate,
+                timezone_name=data.get("timezone_name") or "UTC", attendees=attendees, **auth,
             )
             return f"Created '{result['summary']}' ({result['start']} - {result['end']})"
     except calendar_client.CalendarError as exc:
@@ -280,7 +301,7 @@ def _execute_calendar_node(data: dict, node_input: str, run_input: str, user_id:
 
 
 def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: str) -> str:
-    impersonate = data.get("impersonate") or None
+    auth = _resolve_google_auth(data, user_id, sheets_tokens)
     action = data.get("action", "upsert_row")
 
     if action == "create":
@@ -290,7 +311,7 @@ def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: s
         headers = [h.strip() for h in (data.get("headers") or "").split(",") if h.strip()]
         try:
             result = sheets_client.create_spreadsheet(
-                title, headers or None, data.get("sheet_name") or "Sheet1", impersonate=impersonate,
+                title, headers or None, data.get("sheet_name") or "Sheet1", **auth,
             )
         except sheets_client.SheetsError as exc:
             raise ValueError(str(exc)) from exc
@@ -303,7 +324,7 @@ def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: s
 
     if action == "read":
         try:
-            rows = sheets_client.read_rows(spreadsheet_id, sheet_name, impersonate=impersonate)
+            rows = sheets_client.read_rows(spreadsheet_id, sheet_name, **auth)
         except sheets_client.SheetsError as exc:
             raise ValueError(str(exc)) from exc
         if not rows:
@@ -320,10 +341,10 @@ def _execute_sheets_node(data: dict, node_input: str, run_input: str, user_id: s
             for line in lines:
                 values = [v.strip() for v in line.split("|")]
                 if action == "upsert_row":
-                    result = sheets_client.upsert_row(spreadsheet_id, sheet_name, values, impersonate=impersonate)
+                    result = sheets_client.upsert_row(spreadsheet_id, sheet_name, values, **auth)
                     summaries.append(f"{result['action']} row {result['row']} for '{result['key']}'")
                 else:
-                    sheets_client.append_row(spreadsheet_id, sheet_name, values, impersonate=impersonate)
+                    sheets_client.append_row(spreadsheet_id, sheet_name, values, **auth)
                     summaries.append(f"appended: {' | '.join(values)}")
         except sheets_client.SheetsError as exc:
             raise ValueError(str(exc)) from exc
