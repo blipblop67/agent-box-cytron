@@ -38,6 +38,18 @@ echo "==> Installing system dependencies (python3-venv, avahi for .local discove
 sudo apt-get update -qq
 sudo apt-get install -y python3-venv python3-pip avahi-daemon curl >/dev/null
 
+echo "==> Installing Tailscale (optional - only used if an admin connects it later in Settings)"
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh >/dev/null
+fi
+# `tailscale up` configures network interfaces and routing, which needs root -
+# the hub's own service process deliberately does not run as root, so this
+# grants that one user permission to run the tailscale binary specifically,
+# with no password prompt, and nothing broader than that one binary.
+echo "$HUB_USER ALL=(root) NOPASSWD: /usr/bin/tailscale" | sudo tee /etc/sudoers.d/agent-hub-tailscale >/dev/null
+sudo chmod 440 /etc/sudoers.d/agent-hub-tailscale
+sudo visudo -c -f /etc/sudoers.d/agent-hub-tailscale >/dev/null
+
 # ---------------------------------------------------------------------------
 # 1. Frontend
 # ---------------------------------------------------------------------------

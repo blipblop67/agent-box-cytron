@@ -7,7 +7,7 @@ password-reset emails). Secrets (OpenRouter key, the service account
 key, Tavily key, YouTube key, SMTP password) are encrypted at rest with
 the same vault used elsewhere in this hub.
 """
-from . import crypto_vault, db, service_account_auth
+from . import crypto_vault, db, service_account_auth, tailscale_client
 
 DEFAULTS = {
     "hub_name": "",                       # shown in the sidebar/tab title - how someone tells this hub apart from another one
@@ -54,6 +54,7 @@ def get_settings() -> dict:
     settings["duckdns_last_updated_at"] = float(last_updated_at) if last_updated_at else None
     settings["duckdns_last_error"] = db.get_setting("duckdns_last_error") or ""
     settings["google_oauth_client_secret_configured"] = db.get_setting("google_oauth_client_secret_encrypted") is not None
+    settings["tailscale_installed"] = tailscale_client.is_installed()  # a fast file check, not a live status call - that's a separate endpoint
     return settings
 
 

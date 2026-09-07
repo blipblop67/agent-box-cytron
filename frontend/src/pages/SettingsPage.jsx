@@ -40,6 +40,7 @@ export default function SettingsPage() {
       <ServiceAccountCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <GoogleOAuthClientCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <DuckDnsSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+      <TailscaleSettingsCard settings={settings} isAdmin={isAdmin} />
       <WebSearchSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <YouTubeSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
       <SmtpSettingsCard settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
@@ -383,6 +384,107 @@ function DuckDnsSettingsCard({ settings, setSettings, isAdmin }) {
             <p className={`text-xs ${updateResult.ok ? 'text-signal' : 'text-danger'}`}>{updateResult.message}</p>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+function TailscaleSettingsCard({ settings, isAdmin }) {
+  const [status, setStatus] = useState(null)
+  const [authKey, setAuthKey] = useState('')
+  const [hostname, setHostname] = useState('')
+  const [joining, setJoining] = useState(false)
+  const [joinError, setJoinError] = useState(null)
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  useEffect(() => {
+    if (!settings.tailscale_installed) return
+    api.get('/settings/tailscale/status').then(setStatus).catch(() => setStatus({ connected: false }))
+  }, [settings.tailscale_installed])
+
+  async function handleJoin(e) {
+    e.preventDefault()
+    setJoining(true)
+    setJoinError(null)
+    try {
+      const result = await api.post('/settings/tailscale/join', { auth_key: authKey, hostname: hostname || undefined })
+      setStatus(result)
+      setAuthKey('')
+    } catch (err) {
+      setJoinError(err.message)
+    } finally {
+      setJoining(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true)
+    try {
+      await api.post('/settings/tailscale/leave')
+      setStatus({ connected: false, installed: true })
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-line bg-surface p-5">
+      <div>
+        <h2 className="text-sm font-semibold text-ink">Tailscale (stable, secure remote access)</h2>
+        <p className="mt-1 text-xs text-ink-muted">
+          Another way to reach this hub reliably, alongside DuckDNS above - a private mesh network
+          instead of a public one. Once connected, this hub gets a stable hostname reachable from any
+          other device on the same Tailscale network, with nothing exposed to the public internet at
+          all. Purely about reachability, same as DuckDNS - doesn't change how anyone logs into this
+          hub.
+        </p>
+      </div>
+
+      {!settings.tailscale_installed ? (
+        <p className="rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs text-ink-muted">
+          Not available on this hub yet - Tailscale is installed by the standard setup script
+          (deploy/install.sh). If this hub was set up before this feature existed, see
+          deploy/README.md for how to add it.
+        </p>
+      ) : status?.connected ? (
+        <>
+          <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-raised px-3 py-2 text-xs">
+            <CircleCheck size={13} className="text-signal shrink-0" />
+            <span className="text-ink">
+              Connected - reachable at <code className="text-copper">{status.hostname}</code>
+              {status.tailnet && <span className="text-ink-faint"> on {status.tailnet}</span>}
+            </span>
+          </div>
+          {isAdmin && (
+            <Button variant="ghost" size="sm" onClick={handleDisconnect} disabled={disconnecting}>
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+          )}
+        </>
+      ) : isAdmin ? (
+        <form onSubmit={handleJoin} className="space-y-3">
+          <Field label="Auth key" hint="From the Tailscale admin console (login.tailscale.com/admin/settings/keys) - generate one there first">
+            <TextInput
+              type="password"
+              value={authKey}
+              onChange={(e) => setAuthKey(e.target.value)}
+              placeholder="tskey-auth-…"
+            />
+          </Field>
+          <Field label="Hostname (optional)" hint="What this hub shows up as on the tailnet - leave blank to use its existing hostname">
+            <TextInput
+              value={hostname}
+              onChange={(e) => setHostname(e.target.value)}
+              placeholder="agenthub-a3f9c1e2"
+            />
+          </Field>
+          {joinError && <p className="text-xs text-danger">{joinError}</p>}
+          <Button type="submit" variant="primary" disabled={!authKey || joining}>
+            {joining ? 'Connecting…' : 'Connect'}
+          </Button>
+        </form>
+      ) : (
+        <p className="text-xs text-ink-muted">Not connected yet - an admin can set this up.</p>
       )}
     </div>
   )

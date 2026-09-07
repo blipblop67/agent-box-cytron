@@ -284,6 +284,9 @@ cd agent-hub
 | Restart it | `sudo systemctl restart agent-hub` |
 | Stop it | `sudo systemctl stop agent-hub` |
 | Stop it permanently (undo autostart) | `sudo systemctl disable --now agent-hub` |
+| Is Tailscale installed? | `command -v tailscale` (empty output = not installed) |
+| Is the sudoers rule in place? | `sudo -l -U <hub user>` should list `/usr/bin/tailscale` with `NOPASSWD` |
+| Is this Pi currently connected to a tailnet? | `tailscale status` |
 
 ## Troubleshooting
 
@@ -318,6 +321,19 @@ cd agent-hub
   embedding model downloads on its first real use (~130MB) - it needs
   internet the first time, then works offline. Check the logs to see if
   that download is stuck.
+- **The Tailscale card in Settings says "not available on this hub yet"
+  even after connecting an auth key elsewhere**: the card checks for the
+  `tailscale` binary specifically, not whether a tailnet connection
+  exists - if `command -v tailscale` on the Pi comes up empty,
+  `install.sh` didn't get a chance to install it (offline during setup,
+  most likely) - re-run `install.sh`, which is always safe to repeat.
+- **Connecting Tailscale from Settings fails with something about sudo or
+  a password**: the sudoers rule `install.sh` adds
+  (`/etc/sudoers.d/agent-hub-tailscale`) is what lets the hub's own
+  service account run `tailscale up` without a login prompt - check it
+  exists and matches the hub's actual service user with
+  `sudo -l -U <hub user>`. Re-running `install.sh` recreates it if it's
+  missing.
 - **`./deploy/install.sh` says "Unknown option"**: you're likely running it
   as `sh deploy/install.sh` instead of `./deploy/install.sh` (or
   `bash deploy/install.sh`) - it needs a real bash, not POSIX `sh`.

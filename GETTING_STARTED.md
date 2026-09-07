@@ -187,6 +187,37 @@ later). Most hubs never need this — see
 [Section 15](#15-if-something-goes-wrong) for when it's actually worth
 setting up.
 
+### Tailscale (stable, secure remote access)
+
+A second, different way to solve reachability, alongside DuckDNS above —
+a private mesh network instead of a public domain. Where DuckDNS gives
+the hub a real *public* address, Tailscale gives it a stable address on
+a *private* network only your own devices can join — nothing about the
+hub is exposed to the public internet at all. Worth it specifically if
+you want to reach the hub securely from outside your home or office
+network (traveling, a second location) without opening anything up
+publicly.
+
+1. Create a free account at [tailscale.com](https://tailscale.com), and
+   generate an auth key at
+   [login.tailscale.com/admin/settings/keys](https://login.tailscale.com/admin/settings/keys).
+2. Paste it into the Settings → "Tailscale" card, optionally set a
+   hostname, and click **Connect**.
+3. Once connected, the card shows the hub's new stable hostname — that
+   address works from any other device signed into the same Tailscale
+   account (the free tier covers a small handful of devices, plenty for
+   personal or small-team use), once Tailscale is installed there too.
+
+This card only appears fully functional if the hub already has
+Tailscale installed — every hub set up from this guide's Section 3 has
+it; a hub set up before this feature existed shows a short note instead
+of the connect form, and just needs `deploy/install.sh` re-run to catch
+up (see `deploy/README.md`, safe to run again any time). The auth key
+itself is used once, right there, and never stored — Tailscale's own
+software on the hub remembers the connection from then on, the same way
+you don't re-enter a Wi-Fi password every time a laptop reconnects to a
+network it already knows.
+
 ### Web search
 
 A [Tavily](https://tavily.com) API key powers the Web search node — free
@@ -755,7 +786,10 @@ through the browser.
    real address that works the same way on every network — a free
    account, once, and the hub keeps it updated automatically from then
    on. Nothing to do with Google or any other integration — purely about
-   having a reliable address.
+   having a reliable address. **Settings → "Tailscale"** solves the same
+   underlying problem a different way — a private address reachable from
+   your own other devices specifically, rather than a public one anyone
+   could look up.
 6. If none of that gets you in, try power-cycling it — unplug for 10
    seconds, plug back in, wait a minute.
 7. Still nothing? That's a support question, not something to keep
@@ -832,6 +866,7 @@ Read the node it names; the fix is almost always right there.
 | Google integration | Service account JSON key |
 | Google sign-in (OAuth) | Client ID, Client secret — optional, a third way to connect Google |
 | Free remote domain (DuckDNS) | Subdomain, token — optional, unrelated to Google |
+| Tailscale | Auth key, hostname — optional, a private-network alternative to DuckDNS |
 | Web search | Tavily API key |
 | YouTube search | YouTube API key |
 | Outgoing email | SMTP host, port, username, password, from address, TLS |

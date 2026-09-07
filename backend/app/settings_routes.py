@@ -14,8 +14,9 @@ reachability, opt-in, for anyone whose network blocks mDNS.
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from . import db, dynamic_dns, email_sender, hub_settings, service_account_auth
+from . import db, dynamic_dns, email_sender, hub_settings, service_account_auth, tailscale_client
 from .auth import get_current_user
 from .models import SettingsOut, SettingsUpdate, TestEmailRequest, TestImpersonationRequest
 
@@ -101,3 +102,38 @@ def duckdns_update_now(user: dict = Depends(get_current_user)):
     db.set_setting("duckdns_last_updated_at", str(time.time()))
     db.set_setting("duckdns_last_error", "")
     return {"ok": True, "domain": result["domain"], "ip": result["ip"]}
+
+
+class TailscaleJoinRequest(BaseModel):
+    auth_key: str
+    hostname: str | None = None
+
+
+@router.post("/tailscale/join")
+def tailscale_join(body: TailscaleJoinRequest, user: dict = Depends(get_current_user)):
+    """The auth key is used once, right here, and deliberately never
+    stored - Tailscale's own daemon remembers this hub is joined from
+    here on, the same way a browser doesn't need to re-enter a password
+    on every page load once a session exists."""
+    if user["role"] != "admin":
+        raise HTTPException(403, "Only a hub admin can connect Tailscale")
+    try:
+        return tailscale_client.join(body.auth_key, body.hostname or None)
+    except tailscale_client.TailscaleError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/tailscale/status")
+def tailscale_status(user: dict = Depends(get_current_user)):
+    """Live, not cached - Tailscale's own daemon is the actual source of
+    truth, and it can change outside this app entirely (someone removing
+    the device from the admin console, for instance)."""
+    return tailscale_client.status()
+
+
+@router.post("/tailscale/leave")
+def tailscale_leave(user: dict = Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(403, "Only a hub admin can disconnect Tailscale")
+    tailscale_client.leave()
+    return {"ok": True}
